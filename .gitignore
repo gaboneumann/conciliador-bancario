@@ -1,0 +1,48 @@
+# ─── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ─── Entornos virtuales ───────────────────────────────────
+.venv/
+venv/
+env/
+.env
+
+# ─── Pytest / Coverage ────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.coveragerc
+
+# ─── IDEs ─────────────────────────────────────────────────
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ─── Datos sensibles (¡nunca subir al repo!) ──────────────
+data/output/
+*.csv
+
+# Permitir datos sintéticos de input
+!data/input/cartola_personal.xlsx
+!data/input/libro_banco.xlsx
+
+# ─── Logs ─────────────────────────────────────────────────
+logs/
+*.log
+
+# ─── Archivos personales ──────────────────────────────────
+resume_claude.md
+
+# ─── Sistema operativo ────────────────────────────────────
+.DS_Store
+Thumbs.db
