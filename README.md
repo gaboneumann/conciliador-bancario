@@ -1,7 +1,7 @@
 # 🏦 Conciliador Bancario
 
 > Sistema automatizado de conciliación bancaria desarrollado en Python.  
-> Compara transacciones entre una cartola personal y un libro del banco, detecta diferencias, clasifica resultados y genera reportes Excel con formato profesional.
+> Compara transacciones entre una cartola personal y un libro del banco, detecta diferencias, clasifica resultados y genera reportes Excel con formato profesional.  
 >⚠️ Todos los datos incluidos en este repositorio son 100% sintéticos.
 
 <div align="center">
@@ -35,7 +35,7 @@
 
 La conciliación bancaria manual es un proceso repetitivo, propenso a errores y costoso en tiempo. Este sistema automatiza el proceso completo: desde la lectura de archivos Excel hasta la generación de reportes listos para auditoría, con tolerancias configurables y diagnóstico automático de discrepancias.
 
-**Resultado en producción: 94.2% de conciliación automática sobre 996 transacciones sintéticas, reduciendo el tiempo de análisis de horas a segundos. Los datos de entrada incluidos en el repositorio (data/input/) fueron generados íntegramente con generate_sample_data.py — no contienen información bancaria real.
+**Resultado en producción: 94.2% de conciliación automática sobre 996 transacciones sintéticas, reduciendo el tiempo de análisis de horas a segundos. Los datos de entrada incluidos en el repositorio (data/input/) fueron generados con un script que crea datos sintéticos — no contienen información bancaria real.
 
 | Métrica                         | Resultado   |
 | :------------------------------ | ----------: |
@@ -142,7 +142,7 @@ Cada transacción del libro solo puede usarse una vez, evitando matches duplicad
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/tuusuario/conciliador-bancario.git
+git clone https://github.com/gaboneumann/conciliador-bancario.git
 cd conciliador-bancario
 
 # 2. Crear entorno virtual
@@ -164,7 +164,7 @@ data/input/cartola_personal.xlsx
 data/input/libro_banco.xlsx
 ```
 
-> ℹ️ Puedes usar los archivos en `data/sample/` para probar el sistema sin datos reales. Fueron generados con `generate_sample_data.py` — ejecútalo para crear nuevos conjuntos con distintos volúmenes o parámetros.
+> ℹ️ Puedes usar los archivos en `data/input/cartola_personal.xlsx` y 'data/input/libro_banco.xlsx' para probar el sistema sin datos reales. Fueron generados con script externo — ejecútalo para crear nuevos conjuntos con distintos volúmenes o parámetros.
 
 **Ejecutar:**
 
