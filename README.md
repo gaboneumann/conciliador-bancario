@@ -164,7 +164,7 @@ data/input/cartola_personal.xlsx
 data/input/libro_banco.xlsx
 ```
 
-> ℹ️ Puedes usar los archivos en `data/input/cartola_personal.xlsx` y 'data/input/libro_banco.xlsx' para probar el sistema sin datos reales. Fueron generados con script externo — ejecútalo para crear nuevos conjuntos con distintos volúmenes o parámetros.
+> ℹ️ Puedes usar los archivos en `data/input/cartola_personal.xlsx` y `data/input/libro_banco.xlsx` para probar el sistema sin datos reales. Fueron generados con un script externo — ejecútalo para crear nuevos conjuntos con distintos volúmenes o parámetros.
 
 **Ejecutar:**
 
