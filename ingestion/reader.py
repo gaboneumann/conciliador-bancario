@@ -24,9 +24,9 @@ def _leer_excel(ruta: Path, columnas_requeridas: dict) -> pd.DataFrame:
     Función interna que carga un Excel y valida que tenga las columnas esperadas.
 
     Args:
-        ruta:               Ruta al archivo .xlsx
+        ruta:                Ruta al archivo .xlsx
         columnas_requeridas: Diccionario de config con las columnas esperadas
-                            (ej: COLUMNAS_CARTOLA)
+                             (ej: COLUMNAS_CARTOLA)
 
     Returns:
         DataFrame con los datos crudos del Excel
@@ -35,7 +35,6 @@ def _leer_excel(ruta: Path, columnas_requeridas: dict) -> pd.DataFrame:
         ArchivoNoEncontradoError: Si el archivo no existe
         ColumnaFaltanteError:     Si falta alguna columna requerida
     """
-    # — Verificar que el archivo existe —
     if not ruta.exists():
         raise ArchivoNoEncontradoError(ruta)
 
@@ -45,7 +44,6 @@ def _leer_excel(ruta: Path, columnas_requeridas: dict) -> pd.DataFrame:
 
     logger.debug(f"Columnas encontradas: {list(df.columns)}")
 
-    # — Verificar que estén todas las columnas requeridas —
     for nombre_interno, nombre_excel in columnas_requeridas.items():
         if nombre_excel not in df.columns:
             raise ColumnaFaltanteError(nombre_excel, ruta.name)
@@ -56,10 +54,10 @@ def _leer_excel(ruta: Path, columnas_requeridas: dict) -> pd.DataFrame:
 
 
 def leer_cartola() -> pd.DataFrame:
-    """Carga la cartola personal desde data/input/cartola_personal.xlsx"""
+    """Carga la cartola bancaria desde data/input/cartola_bancaria.xlsx"""
     return _leer_excel(ARCHIVO_CARTOLA, COLUMNAS_CARTOLA)
 
 
 def leer_libro() -> pd.DataFrame:
-    """Carga el libro del banco desde data/input/libro_banco.xlsx"""
+    """Carga el libro auxiliar desde data/input/libro_auxiliar.xlsx"""
     return _leer_excel(ARCHIVO_LIBRO, COLUMNAS_LIBRO)
