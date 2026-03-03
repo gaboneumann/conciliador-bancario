@@ -81,36 +81,36 @@ El proyecto sigue el principio de **separación de responsabilidades**: cada mó
 conciliador_bancario/
 │
 ├── config/
-│   └── config.py               # Rutas, columnas y tolerancias configurables
+│   └── config.py                       # Rutas, columnas y tolerancias configurables
 │
 ├── utils/
-│   ├── logger.py               # Logging dual: consola + archivo
-│   └── exceptions.py           # Jerarquía de excepciones propias
+│   ├── logger.py                       # Logging dual: consola + archivo
+│   └── exceptions.py                   # Jerarquía de excepciones propias
 │
-├── ingestion/
-│   ├── reader.py               # Lectura y validación de Excel
-│   └── normalizer.py           # Limpieza y estandarización de datos
+├── ingestion/__
+│   ├── reader.py                       # Lectura y validación de Excel
+│   └── normalizer.py                   # Limpieza y estandarización de datos
 │
 ├── conciliation/
-│   ├── rules.py                # Reglas de tolerancia (±2% monto, ±3 días)
-│   ├── matcher.py              # Algoritmo de matching con diagnóstico
-│   └── classifier.py           # Ensamblado del resultado final
+│   ├── rules.py                        # Reglas de tolerancia (±2% monto, ±3 días)
+│   ├── matcher.py                      # Algoritmo de matching con diagnóstico
+│   └── classifier.py                   # Ensamblado del resultado final
 │
 ├── reporting/
-│   ├── formatter.py            # Estilos y colores openpyxl
-│   └── writer.py               # Escritura de Excel con encabezados agrupados
+│   ├── formatter.py                    # Estilos y colores openpyxl
+│   └── writer.py                       # Escritura de Excel con encabezados agrupados
 │
 ├── data/
-│   ├── input/                  # Archivos de entrada 
-│   │   ├── cartola_personal.xlsx                # Datos sintéticos
-│   │   └── libro_banco.xlsx                     # Datos sintéticos    
-│   ├── output/                 # Reportes generados          
+│   ├── input/                          # Archivos de entrada 
+│   │   ├── cartola_personal.xlsx       # Datos sintéticos
+│   │   └── libro_banco.xlsx            # Datos sintéticos    
+│   ├── output/                         # Reportes generados          
 │   └── ├── conciliacion_resultado.xlsx
 │       └── partidas_sin_conciliar.xlsx
 │   
 │
-├── tests/                      # 231 tests con pytest (TDD)
-├── main.py                     # Orquestador del flujo completo
+├── tests/                              # 231 tests con pytest (TDD)
+├── main.py                             # Orquestador del flujo completo
 └── README.md
 ```
 
