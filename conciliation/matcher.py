@@ -1,71 +1,157 @@
 """
-matcher.py — Algoritmo de matching entre cartola y libro del banco.
+matcher.py — Algoritmo de matching entre cartola y libro auxiliar (v2).
 
-Responsabilidad: encontrar qué transacción de la cartola corresponde
-a qué transacción del libro, respetando las tolerancias definidas en rules.py
+Jerarquía de matching definida por contador:
+    1. RUT      → coincidencia exacta (llave maestra — descarte inmediato si falla)
+    2. Monto    → diferencia ≤ min(2%, $5.000 CLP)
+    3. Fecha    → fecha_valor vs fecha_contable ±3 días
+    4. Nº Doc   → primeros 6 caracteres (solo desempate)
 
-Resultado: lista de dicts con:
-    idx_cartola      : índice en cartola
-    idx_libro        : índice en libro (None si sin match)
-    tipo_match       : "exacto", "parcial" o None
-    motivo           : razón del no match (solo cuando tipo_match es None)
-    idx_libro_cercano: índice del registro más cercano en libro (solo sin match)
+Certeza resultante:
+    Exacto   → RUT con DV + Monto + Fecha mismo mes + Referencia
+    Sugerido → RUT sin DV, o desfase de mes, o fecha fuera de ±3 días
+    Manual   → sin match automático
 """
 import pandas as pd
 from utils.logger import get_logger
+from utils.rut_utils import ruts_coinciden
 from conciliation.rules import (
-    es_match_exacto,
-    es_match_parcial,
     montos_coinciden,
     fechas_coinciden,
+    mismo_mes,
+    detectar_iva,
+    referencias_coinciden,
+)
+from config.config import (
+    CERTEZA_EXACTO,
+    CERTEZA_SUGERIDO,
+    CERTEZA_MANUAL,
+    FLAG_PARTIDA_CONCILIACION,
+    FLAG_IVA,
 )
 
 logger = get_logger(__name__)
 
-# Motivos posibles de no match
-MOTIVO_FECHA_FUERA_RANGO  = "Monto coincide pero fecha fuera de rango"
+# ─── Motivos de sin match ─────────────────────────────────────────────────────
+MOTIVO_FECHA_FUERA_RANGO   = "Monto coincide pero fecha fuera de rango"
 MOTIVO_MONTO_NO_ENCONTRADO = "Fecha coincide pero monto no encontrado"
-MOTIVO_AUSENTE_EN_LIBRO    = "Transacción ausente en libro"
+MOTIVO_POSIBLE_IVA         = "Posible Neto vs Bruto (×1.19)"
+MOTIVO_AUSENTE_EN_LIBRO    = "Transacción ausente en libro auxiliar"
 
 
 def _diagnosticar_sin_match(
     monto_c: float,
     fecha_c: pd.Timestamp,
+    rut_c: str,
     libro: pd.DataFrame,
-) -> tuple[str, int | None]:
+) -> tuple[str, int | None, str]:
     """
-    Busca en TODO el libro (incluyendo filas ya usadas) el registro
-    más cercano a la transacción de la cartola y determina por qué falló.
+    Busca en todo el libro la causa más probable del no match.
 
-    Busca en todo el libro porque la fila más cercana puede estar usada —
-    pero igual queremos mostrarla como referencia diagnóstica.
-
-    Args:
-        monto_c: Monto de la transacción sin match
-        fecha_c: Fecha de la transacción sin match
-        libro:   DataFrame completo del libro
+    Prioridad de diagnóstico:
+        1. RUT + Monto coinciden pero fecha fuera de rango
+        2. RUT + Posible IVA (ratio ×1.19)
+        3. RUT + Fecha coinciden pero monto no encontrado
+        4. Monto coincide sin RUT
+        5. Fecha coincide sin RUT
+        6. Ausente en libro
 
     Returns:
-        Tuple (motivo, idx_libro_cercano)
-        motivo           : string describiendo la razón del no match
-        idx_libro_cercano: índice de la fila más cercana en el libro
+        Tuple (motivo, idx_cercano, flag_iva)
     """
-    idx_cercano = None
+    flag_iva = ""
 
-    # — Prioridad 1: ¿existe monto similar pero fecha fuera de rango? —
+    # — Prioridad 1, 2 y 3: candidatos con mismo RUT —
+    for idx_l, fila_l in libro.iterrows():
+        rut_match = ruts_coinciden(rut_c, fila_l["rut"])
+
+        if rut_match["coincide"]:
+            if montos_coinciden(monto_c, fila_l["monto"]):
+                return MOTIVO_FECHA_FUERA_RANGO, idx_l, flag_iva
+            elif detectar_iva(monto_c, fila_l["monto"]):
+                flag_iva = FLAG_IVA
+                return MOTIVO_POSIBLE_IVA, idx_l, flag_iva
+
+    for idx_l, fila_l in libro.iterrows():
+        rut_match = ruts_coinciden(rut_c, fila_l["rut"])
+
+        if rut_match["coincide"]:
+            if fechas_coinciden(fecha_c, fila_l["fecha_contable"]):
+                return MOTIVO_MONTO_NO_ENCONTRADO, idx_l, flag_iva
+
+    # — Prioridad 4 y 5: sin RUT, buscar por monto o fecha —
     for idx_l, fila_l in libro.iterrows():
         if montos_coinciden(monto_c, fila_l["monto"]):
-            idx_cercano = idx_l
-            return MOTIVO_FECHA_FUERA_RANGO, idx_cercano
+            return MOTIVO_FECHA_FUERA_RANGO, idx_l, flag_iva
 
-    # — Prioridad 2: ¿existe fecha similar pero monto distinto? —
     for idx_l, fila_l in libro.iterrows():
-        if fechas_coinciden(fecha_c, fila_l["fecha"]):
-            idx_cercano = idx_l
-            return MOTIVO_MONTO_NO_ENCONTRADO, idx_cercano
+        if fechas_coinciden(fecha_c, fila_l["fecha_contable"]):
+            return MOTIVO_MONTO_NO_ENCONTRADO, idx_l, flag_iva
 
-    # — Prioridad 3: no hay nada parecido —
-    return MOTIVO_AUSENTE_EN_LIBRO, None
+    return MOTIVO_AUSENTE_EN_LIBRO, None, flag_iva
+
+def _evaluar_candidato(
+    fila_c: pd.Series,
+    fila_l: pd.Series,
+) -> dict | None:
+    """
+    Evalúa un candidato del libro contra una fila de cartola
+    siguiendo la jerarquía RUT → Monto → Fecha → Referencia.
+
+    Returns:
+        dict con certeza, flag_conciliacion y regla_aplicada
+        None si el candidato no pasa la jerarquía
+    """
+    # — Paso 1: RUT (llave maestra) —
+    rut_result = ruts_coinciden(fila_c["rut"], fila_l["rut"])
+    if not rut_result["coincide"]:
+        return None
+
+    certeza_rut = rut_result["certeza"]
+
+    # — Paso 2: Monto —
+    if not montos_coinciden(fila_c["monto"], fila_l["monto"]):
+        return None
+
+    # — Paso 3: Fecha Valor vs Fecha Contable —
+    fecha_valor    = fila_c["fecha_valor"]
+    fecha_contable = fila_l["fecha_contable"]
+
+    dentro_rango   = fechas_coinciden(fecha_valor, fecha_contable)
+    mismo_mes_flag = mismo_mes(fecha_valor, fecha_contable)
+
+    flag_conciliacion = ""
+    certeza_fecha     = CERTEZA_EXACTO
+
+    if not mismo_mes_flag:
+        flag_conciliacion = FLAG_PARTIDA_CONCILIACION
+        certeza_fecha     = CERTEZA_SUGERIDO
+    elif not dentro_rango:
+        certeza_fecha = CERTEZA_SUGERIDO
+
+    # — Paso 4: Referencia (solo desempate) —
+    ref_coincide = referencias_coinciden(
+        fila_c["nro_documento"],
+        fila_l["nro_referencia"],
+    )
+
+    # — Certeza final: la más baja entre RUT y Fecha —
+    if certeza_rut == "sugerido" or certeza_fecha == CERTEZA_SUGERIDO:
+        certeza_final = CERTEZA_SUGERIDO
+    else:
+        certeza_final = CERTEZA_EXACTO
+
+    # — Regla aplicada —
+    partes = ["RUT", "Monto", "Fecha"]
+    if ref_coincide:
+        partes.append("Referencia")
+    regla_aplicada = " + ".join(partes)
+
+    return {
+        "certeza":          certeza_final,
+        "flag_conciliacion": flag_conciliacion,
+        "regla_aplicada":   regla_aplicada,
+    }
 
 
 def hacer_matching(
@@ -73,102 +159,75 @@ def hacer_matching(
     libro: pd.DataFrame,
 ) -> list[dict]:
     """
-    Compara cada fila de la cartola contra el libro y encuentra matches.
-
-    Algoritmo:
-        Para cada transacción de la cartola:
-            1. Busca match exacto en el libro (monto + fecha + referencia)
-            2. Si no encuentra, busca match parcial (monto + fecha)
-            3. Si no encuentra ninguno, diagnostica por qué falló
-        Una fila del libro solo puede usarse una vez para match.
-
-    Args:
-        cartola : DataFrame normalizado de la cartola personal
-        libro   : DataFrame normalizado del libro del banco
+    Compara cada fila de la cartola contra el libro usando la jerarquía v2.
 
     Returns:
-        Lista de dicts con el resultado de cada transacción:
-        [
-            {
-                "idx_cartola"      : 0,
-                "idx_libro"        : 5,
-                "tipo_match"       : "exacto",
-                "motivo"           : None,
-                "idx_libro_cercano": None,
-            },
-            {
-                "idx_cartola"      : 3,
-                "idx_libro"        : None,
-                "tipo_match"       : None,
-                "motivo"           : "Monto coincide pero fecha fuera de rango",
-                "idx_libro_cercano": 12,
-            },
-            ...
-        ]
+        Lista de dicts con resultado de cada transacción:
+        {
+            idx_cartola, idx_libro, tipo_match, certeza,
+            motivo, flag_conciliacion, flag_iva,
+            regla_aplicada, idx_libro_cercano
+        }
     """
-    logger.info(f"Iniciando matching: {len(cartola)} filas cartola vs {len(libro)} filas libro")
+    logger.info(f"Iniciando matching v2: {len(cartola)} filas cartola vs {len(libro)} filas libro")
 
-    resultados = []
-
-    # Índices del libro que aún no han sido utilizados en ningún match
+    resultados        = []
     indices_disponibles = set(libro.index)
 
     for idx_c, fila_c in cartola.iterrows():
 
-        monto_c = fila_c["monto"]
-        fecha_c = fila_c["fecha"]
-        ref_c   = fila_c["referencia"]
+        match_encontrado  = None
+        certeza           = CERTEZA_MANUAL
+        flag_conciliacion = ""
+        flag_iva          = ""
+        regla_aplicada    = ""
+        motivo            = None
+        idx_cercano       = None
 
-        match_encontrado = None
-        tipo_match       = None
-        motivo           = None
-        idx_cercano      = None
-
-        # — Paso 1: buscar match exacto —
+        # — Buscar candidato en libro disponible —
         for idx_l in list(indices_disponibles):
-            fila_l = libro.loc[idx_l]
-            if es_match_exacto(
-                monto_c, fecha_c, ref_c,
-                fila_l["monto"], fila_l["fecha"], fila_l["referencia"]
-            ):
-                match_encontrado = idx_l
-                tipo_match       = "exacto"
+            fila_l    = libro.loc[idx_l]
+            evaluacion = _evaluar_candidato(fila_c, fila_l)
+
+            if evaluacion is not None:
+                match_encontrado  = idx_l
+                certeza           = evaluacion["certeza"]
+                flag_conciliacion = evaluacion["flag_conciliacion"]
+                regla_aplicada    = evaluacion["regla_aplicada"]
                 break
 
-        # — Paso 2: si no hay exacto, buscar match parcial —
-        if match_encontrado is None:
-            for idx_l in list(indices_disponibles):
-                fila_l = libro.loc[idx_l]
-                if es_match_parcial(
-                    monto_c, fecha_c, ref_c,
-                    fila_l["monto"], fila_l["fecha"], fila_l["referencia"]
-                ):
-                    match_encontrado = idx_l
-                    tipo_match       = "parcial"
-                    break
+        # — Determinar tipo_match y diagnosticar si no hay match —
+        if match_encontrado is not None:
+            tipo_match = certeza  # Exacto o Sugerido
+        else:
+            tipo_match = CERTEZA_MANUAL
+            motivo, idx_cercano, flag_iva = _diagnosticar_sin_match(
+                fila_c["monto"],
+                fila_c["fecha_valor"],
+                fila_c["rut"],
+                libro,
+            )
 
-        # — Paso 3: si no hay match, diagnosticar por qué —
-        if match_encontrado is None:
-            motivo, idx_cercano = _diagnosticar_sin_match(monto_c, fecha_c, libro)
-
-        # — Registrar resultado —
         resultados.append({
-            "idx_cartola":       idx_c,
-            "idx_libro":         match_encontrado,
-            "tipo_match":        tipo_match,
-            "motivo":            motivo,
-            "idx_libro_cercano": idx_cercano,
+            "idx_cartola":        idx_c,
+            "idx_libro":          match_encontrado,
+            "tipo_match":         tipo_match,
+            "certeza":            certeza if match_encontrado is not None else CERTEZA_MANUAL,
+            "motivo":             motivo,
+            "flag_conciliacion":  flag_conciliacion,
+            "flag_iva":           flag_iva,
+            "regla_aplicada":     regla_aplicada,
+            "idx_libro_cercano":  idx_cercano,
         })
 
-        # — Marcar fila del libro como usada —
         if match_encontrado is not None:
             indices_disponibles.discard(match_encontrado)
 
     # — Resumen —
-    exactos   = sum(1 for r in resultados if r["tipo_match"] == "exacto")
-    parciales = sum(1 for r in resultados if r["tipo_match"] == "parcial")
-    sin_match = sum(1 for r in resultados if r["tipo_match"] is None)
+    exactos  = sum(1 for r in resultados if r["tipo_match"] == CERTEZA_EXACTO)
+    sugeridos = sum(1 for r in resultados if r["tipo_match"] == CERTEZA_SUGERIDO)
+    manuales  = sum(1 for r in resultados if r["tipo_match"] == CERTEZA_MANUAL)
 
-    logger.info(f"Matching completado → exactos: {exactos} | parciales: {parciales} | sin match: {sin_match}")
+    logger.info(f"Matching completado → exactos: {exactos} | sugeridos: {sugeridos} | manuales: {manuales}")
 
     return resultados
