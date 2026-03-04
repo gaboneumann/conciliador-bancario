@@ -1,10 +1,7 @@
 """
-rules.py — Reglas de negocio para la conciliación bancaria.
+rules.py — Reglas de negocio para la conciliación bancaria (v2).
 
-Define qué significa que dos transacciones "hacen match"
-bajo criterios de tolerancia configurables.
-
-Todas las funciones retornan bool y son puras:
+Todas las funciones son puras:
   - No modifican datos
   - No tienen efectos secundarios
   - El mismo input siempre produce el mismo output
@@ -12,26 +9,27 @@ Todas las funciones retornan bool y son puras:
 import pandas as pd
 from config.config import (
     TOLERANCIA_MONTO_PCT,
+    TOLERANCIA_MONTO_ABS_MAX,
     TOLERANCIA_DIAS,
     TOLERANCIA_REFERENCIA,
+    FACTOR_IVA,
+    TOLERANCIA_IVA,
 )
 
 
 def montos_coinciden(monto_a: float, monto_b: float) -> bool:
     """
-    Verifica si dos montos coinciden dentro del ±2% configurado.
+    Verifica si dos montos coinciden dentro de:
+        min(±2% del monto, $5.000 CLP)
 
-    Ejemplo con TOLERANCIA_MONTO_PCT = 0.02:
-        100.000 vs 101.500  → True  (diferencia 1.5%)
-        100.000 vs 103.000  → False (diferencia 3.0%)
-        100.000 vs 100.000  → True  (diferencia 0.0%)
+    El cap absoluto evita que diferencias de millones pasen
+    el filtro por estar bajo el 2% relativo.
 
-    Args:
-        monto_a: Monto de la cartola
-        monto_b: Monto del libro
-
-    Returns:
-        True si la diferencia porcentual es <= TOLERANCIA_MONTO_PCT
+    Ejemplo:
+        100.000 vs 101.500  → True  (1.5% < 2%, $1.500 < $5.000)
+        500.000 vs 505.001  → False ($5.001 > cap de $5.000)
+      1.000.000 vs 1.004.999 → True  ($4.999 < cap)
+      1.000.000 vs 1.005.001 → False ($5.001 > cap)
     """
     if pd.isna(monto_a) or pd.isna(monto_b):
         return False
@@ -40,22 +38,17 @@ def montos_coinciden(monto_a: float, monto_b: float) -> bool:
     if monto_a == 0 or monto_b == 0:
         return False
 
-    diferencia_pct = abs(monto_a - monto_b) / abs(monto_a)
-    return diferencia_pct <= TOLERANCIA_MONTO_PCT
+    tolerancia = min(abs(monto_a) * TOLERANCIA_MONTO_PCT, TOLERANCIA_MONTO_ABS_MAX)
+    return abs(monto_a - monto_b) <= tolerancia
 
 
 def fechas_coinciden(fecha_a: pd.Timestamp, fecha_b: pd.Timestamp) -> bool:
     """
     Verifica si dos fechas coinciden dentro del ±3 días configurado.
 
-    Ejemplo con TOLERANCIA_DIAS = 3:
-        15-ene vs 17-ene → True  (2 días de diferencia)
-        15-ene vs 19-ene → False (4 días de diferencia)
-        15-ene vs 15-ene → True  (0 días de diferencia)
-
     Args:
-        fecha_a: Fecha de la cartola
-        fecha_b: Fecha del libro
+        fecha_a: Fecha Valor de la cartola
+        fecha_b: Fecha Contable del libro
 
     Returns:
         True si la diferencia en días es <= TOLERANCIA_DIAS
@@ -67,25 +60,50 @@ def fechas_coinciden(fecha_a: pd.Timestamp, fecha_b: pd.Timestamp) -> bool:
     return diferencia_dias <= TOLERANCIA_DIAS
 
 
+def mismo_mes(fecha_a: pd.Timestamp, fecha_b: pd.Timestamp) -> bool:
+    """
+    Verifica si dos fechas pertenecen al mismo año y mes contable.
+
+    Usada para detectar desfase de mes y activar el flag
+    Partida en Conciliación.
+
+    Returns:
+        True si año y mes son iguales en ambas fechas.
+    """
+    fa = pd.Timestamp(fecha_a)
+    fb = pd.Timestamp(fecha_b)
+    return fa.year == fb.year and fa.month == fb.month
+
+
+def detectar_iva(monto_a: float, monto_b: float) -> bool:
+    """
+    Detecta si la diferencia entre dos montos corresponde al ratio IVA (×1.19).
+
+    Útil para diagnosticar partidas sin match donde uno registra
+    neto y el otro bruto de IVA.
+
+    Returns:
+        True si el ratio entre montos es aproximadamente 1.19 (±1%)
+    """
+    if not monto_a or not monto_b:
+        return False
+
+    ratio = abs(monto_a) / abs(monto_b)
+    return (
+        abs(ratio - FACTOR_IVA) <= TOLERANCIA_IVA or
+        abs(1 / ratio - FACTOR_IVA) <= TOLERANCIA_IVA
+    )
+
+
 def referencias_coinciden(ref_a: str, ref_b: str) -> bool:
     """
     Verifica si dos referencias coinciden por sus primeros N caracteres.
 
-    Usa coincidencia parcial porque los errores del dataset incluyen
-    referencias truncadas o con caracteres faltantes al final.
-
-    Ejemplo con TOLERANCIA_REFERENCIA = 4:
-        "1234567890" vs "1234567890" → True  (match exacto)
-        "1234567890" vs "1234X"      → True  (primeros 4 iguales)
-        "1234567890" vs "9999"       → False (primeros 4 distintos)
-        ""           vs "1234"       → False (referencia vacía)
-
-    Args:
-        ref_a: Referencia de la cartola (ya normalizada a uppercase)
-        ref_b: Referencia del libro (ya normalizada a uppercase)
+    En v2 la tolerancia sube de 4 a 6 caracteres (TOLERANCIA_REFERENCIA).
+    Solo actúa como desempate — nunca descarta un candidato.
 
     Returns:
-        True si los primeros TOLERANCIA_REFERENCIA caracteres son iguales
+        True si los primeros TOLERANCIA_REFERENCIA caracteres son iguales.
     """
     if not ref_a or not ref_b:
         return False
@@ -111,9 +129,6 @@ def es_match_parcial(monto_a: float, fecha_a: pd.Timestamp, ref_a: str,
     """
     Verifica si dos transacciones hacen match parcial:
     monto y fecha coinciden, pero la referencia no.
-
-    Útil para detectar transacciones que son probablemente la misma
-    pero con referencia incorrecta o faltante.
     """
     return (
         montos_coinciden(monto_a, monto_b) and
