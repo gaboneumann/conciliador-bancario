@@ -1,31 +1,41 @@
 """
-formatter.py — Estilos y colores para los Excel de salida.
+formatter.py — Estilos y colores para los Excel de salida (v2).
 
 Responsabilidad única: definir y retornar objetos de estilo de openpyxl.
 No escribe archivos ni manipula datos.
 
-Colores de filas por tipo de match:
-    exacto    → verde claro   #C6EFCE
-    parcial   → amarillo claro #FFEB9C
-    sin_match → rojo claro    #FFC7CE
+Colores de filas por tipo de match (v2):
+    Exacto           → verde claro        #C6EFCE
+    Sugerido         → amarillo claro     #FFEB9C
+    Manual           → rojo claro         #FFC7CE
+    flag_conciliacion→ azul claro         #BDD7EE  (prioridad sobre Sugerido)
+    flag_iva         → verde agua         #E2EFDA
 
 Colores de encabezados agrupados:
-    Cartola Personal → azul oscuro   #1F4E79
-    Libro del Banco  → verde oscuro  #1A5632
-    Resultado        → gris oscuro   #404040
-    Diagnóstico      → rojo oscuro   #7B2C2C
+    Cartola Personal → azul oscuro        #1F4E79
+    Libro del Banco  → verde oscuro       #1A5632
+    Resultado        → gris oscuro        #404040
+    Diagnóstico      → rojo oscuro        #7B2C2C
 """
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 # ─── Colores de filas ─────────────────────────────────────────────────────────
 
 COLORES = {
-    "exacto":     "C6EFCE",   # verde claro
-    "parcial":    "FFEB9C",   # amarillo claro
-    "sin_match":  "FFC7CE",   # rojo claro
-    "encabezado": "1F4E79",   # azul oscuro (encabezado simple)
-    "blanco":     "FFFFFF",
-    "gris_claro": "F2F2F2",
+    # v2
+    "Exacto":        "C6EFCE",   # verde claro
+    "Sugerido":      "FFEB9C",   # amarillo claro
+    "Manual":        "FFC7CE",   # rojo claro
+    "conciliacion":  "BDD7EE",   # azul claro  (flag Partida en Conciliación)
+    "iva":           "E2EFDA",   # verde agua  (flag IVA)
+    # v1 — mantenidos por retrocompatibilidad
+    "exacto":        "C6EFCE",
+    "parcial":       "FFEB9C",
+    "sin_match":     "FFC7CE",
+    # utilidades
+    "encabezado":    "1F4E79",   # azul oscuro (encabezado simple)
+    "blanco":        "FFFFFF",
+    "gris_claro":    "F2F2F2",
 }
 
 # ─── Colores de bloques (encabezados agrupados) ───────────────────────────────
@@ -71,9 +81,6 @@ def estilo_encabezado_bloque(bloque: str) -> dict:
     """
     Estilo para la fila superior de encabezados agrupados (fila 1).
 
-    Cada bloque tiene su propio color para separar visualmente
-    los datos de cartola, libro, resultado y diagnóstico.
-
     Args:
         bloque: "cartola", "libro", "resultado" o "diagnostico"
 
@@ -85,7 +92,7 @@ def estilo_encabezado_bloque(bloque: str) -> dict:
     return {
         "font": Font(
             name=FUENTE,
-            size=TAMANO + 1,   # un punto más grande para destacar
+            size=TAMANO + 1,
             bold=True,
             color="FFFFFF",
         ),
@@ -101,17 +108,29 @@ def estilo_encabezado_bloque(bloque: str) -> dict:
     }
 
 
-def estilo_fila(tipo_match: str) -> dict:
+def estilo_fila(tipo_match: str, flag_conciliacion: str = "", flag_iva: str = "") -> dict:
     """
-    Estilo para una fila de datos según su tipo de match.
+    Estilo para una fila de datos según su tipo de match y flags activos.
+
+    Prioridad de color:
+        1. flag_conciliacion activo → azul claro  (#BDD7EE)
+        2. flag_iva activo          → verde agua  (#E2EFDA)
+        3. tipo_match               → Exacto / Sugerido / Manual
 
     Args:
-        tipo_match: "exacto", "parcial", "sin_match" o cualquier string
+        tipo_match        : "Exacto", "Sugerido", "Manual" (v2) o valores v1
+        flag_conciliacion : string no vacío activa el color azul
+        flag_iva          : string no vacío activa el color verde agua
 
     Returns:
         Dict con font, fill, alignment y border listos para aplicar
     """
-    color = COLORES.get(tipo_match, COLORES["blanco"])
+    if flag_conciliacion:
+        color = COLORES["conciliacion"]
+    elif flag_iva:
+        color = COLORES["iva"]
+    else:
+        color = COLORES.get(tipo_match, COLORES["blanco"])
 
     return {
         "font": Font(name=FUENTE, size=TAMANO),
@@ -137,51 +156,66 @@ def estilo_fecha() -> dict:
     }
 
 
-# ─── Anchos de columna ────────────────────────────────────────────────────────
-# resultado: 5 cartola + 5 libro + 3 resultado = 13 columnas
-# sin_conciliar: 5 cartola + 5 diagnóstico = 10 columnas
+# ─── Anchos de columna v2 ─────────────────────────────────────────────────────
+# resultado    : 7 cartola + 7 libro + 10 resultado = 24 columnas
+# sin_conciliar: 7 cartola + 3 diagnóstico          = 10 columnas
 
 ANCHOS_RESULTADO = {
-    "A": 14,   # fecha_cartola
-    "B": 16,   # monto_cartola
-    "C": 35,   # descripcion_cartola
-    "D": 16,   # referencia_cartola
-    "E": 20,   # banco_cartola
-    "F": 14,   # fecha_libro
-    "G": 16,   # monto_libro
-    "H": 35,   # descripcion_libro
-    "I": 16,   # referencia_libro
-    "J": 14,   # codigo_libro
-    "K": 14,   # tipo_match
-    "L": 14,   # diff_monto
-    "M": 12,   # diff_dias
+    # — Cartola (A–G) —
+    "A": 14,   # fecha_operacion_cartola
+    "B": 14,   # fecha_valor_cartola
+    "C": 35,   # glosa_cartola
+    "D": 18,   # rut_cartola
+    "E": 16,   # monto_cartola
+    "F": 18,   # nro_documento_cartola
+    "G": 20,   # banco_cartola
+    # — Libro (H–N) —
+    "H": 14,   # fecha_contable_libro
+    "I": 35,   # glosa_libro
+    "J": 18,   # rut_libro
+    "K": 16,   # monto_libro
+    "L": 18,   # nro_referencia_libro
+    "M": 16,   # nro_comprobante_libro
+    "N": 14,   # codigo_tx_libro
+    # — Resultado (O–X) —
+    "O": 12,   # tipo_match
+    "P": 12,   # certeza
+    "Q": 28,   # regla_aplicada
+    "R": 14,   # diff_monto
+    "S": 12,   # diff_dias
+    "T": 26,   # flag_conciliacion
+    "U": 26,   # flag_iva
+    "V": 14,   # dias_antiguedad
+    "W": 18,   # tramo_antiguedad
+    "X": 45,   # accion_recomendada
 }
 
 ANCHOS_SIN_CONCILIAR = {
-    "A": 14,   # fecha_cartola
-    "B": 16,   # monto_cartola
-    "C": 35,   # descripcion_cartola
-    "D": 16,   # referencia_cartola
-    "E": 20,   # banco_cartola
-    "F": 35,   # motivo
-    "G": 14,   # fecha_cercana
-    "H": 16,   # monto_cercano
-    "I": 35,   # descripcion_cercana
+    # — Cartola (A–G) —
+    "A": 14,   # fecha_operacion_cartola
+    "B": 14,   # fecha_valor_cartola
+    "C": 35,   # glosa_cartola
+    "D": 18,   # rut_cartola
+    "E": 16,   # monto_cartola
+    "F": 18,   # nro_documento_cartola
+    "G": 20,   # banco_cartola
+    # — Diagnóstico (H–J) —
+    "H": 45,   # motivo
+    "I": 16,   # monto_cercano
     "J": 16,   # diff_monto_cercano
 }
 
-# ─── Definición de bloques para encabezados agrupados ─────────────────────────
-# Cada bloque define: nombre visible, color y rango de columnas (1-based)
+# ─── Definición de bloques para encabezados agrupados (v2) ────────────────────
 
 BLOQUES_RESULTADO = [
-    {"nombre": "Cartola Personal", "bloque": "cartola",   "col_inicio": 1, "col_fin": 5},
-    {"nombre": "Libro del Banco",  "bloque": "libro",     "col_inicio": 6, "col_fin": 10},
-    {"nombre": "Resultado",        "bloque": "resultado", "col_inicio": 11, "col_fin": 13},
+    {"nombre": "Cartola Personal", "bloque": "cartola",   "col_inicio": 1,  "col_fin": 7},
+    {"nombre": "Libro del Banco",  "bloque": "libro",     "col_inicio": 8,  "col_fin": 14},
+    {"nombre": "Resultado",        "bloque": "resultado", "col_inicio": 15, "col_fin": 24},
 ]
 
 BLOQUES_SIN_CONCILIAR = [
-    {"nombre": "Cartola Personal",    "bloque": "cartola",     "col_inicio": 1, "col_fin": 5},
-    {"nombre": "Diagnóstico",         "bloque": "diagnostico", "col_inicio": 6, "col_fin": 10},
+    {"nombre": "Cartola Personal", "bloque": "cartola",     "col_inicio": 1, "col_fin": 7},
+    {"nombre": "Diagnóstico",      "bloque": "diagnostico", "col_inicio": 8, "col_fin": 10},
 ]
 
 

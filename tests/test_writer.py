@@ -1,5 +1,5 @@
 """
-test_writer.py — Tests para reporting/writer.py
+test_writer.py — Tests para reporting/writer.py (v2)
 """
 import pytest
 import pandas as pd
@@ -14,24 +14,44 @@ from reporting.writer import escribir_resultado, escribir_sin_conciliar
 @pytest.fixture
 def df_resultado():
     return pd.DataFrame({
-        "fecha_cartola":       pd.to_datetime(["2024-01-15", "2024-02-20", "2024-03-10"]),
-        "monto_cartola":       [-100_000.0, -50_000.0, 200_000.0],
-        "descripcion_cartola": ["pago luz enel", "transferencia juan", "sueldo empresa"],
-        "referencia_cartola":  ["1234567890", "ABCD567890", "9999999999"],
-        "banco_cartola":       ["Banco de Chile", "BancoEstado", "BCI"],
-        "fecha_libro":         pd.to_datetime(["2024-01-15", "2024-02-21", None]),
-        "monto_libro":         [-100_000.0, -50_200.0, None],
-        "descripcion_libro":   ["pago luz enel", "transferencia juan", None],
-        "referencia_libro":    ["1234567890", "XXXX567890", None],
-        "codigo_libro":        ["SRV001", "TRF002", None],
-        "tipo_match":          ["exacto", "parcial", "sin_match"],
-        "diff_monto":          [0.0, 200.0, None],
-        "diff_dias":           [0, 1, None],
-        "motivo":              [None, None, "Monto coincide pero fecha fuera de rango"],
-        "fecha_cercana":       pd.to_datetime([None, None, "2024-01-15"]),
-        "monto_cercano":       [None, None, -100_000.0],
-        "descripcion_cercana": [None, None, "pago luz enel"],
-        "diff_monto_cercano":  [None, None, 300_000.0],
+        # — Lado cartola —
+        "fecha_operacion_cartola": pd.to_datetime(["2024-01-15", "2024-02-20", "2024-03-10"]),
+        "fecha_valor_cartola":     pd.to_datetime(["2024-01-15", "2024-02-20", "2024-03-10"]),
+        "glosa_cartola":           ["pago luz enel", "transferencia juan", "sueldo empresa"],
+        "rut_cartola":             ["19141427-6", "21493875-8", "76354771-9"],
+        "monto_cartola":           [-100_000.0, -50_000.0, 200_000.0],
+        "nro_documento_cartola":   ["1234567890", "ABCD567890", "9999999999"],
+        "banco_cartola":           ["Banco de Chile", "BancoEstado", "BCI"],
+        # — Lado libro —
+        "fecha_contable_libro":    pd.to_datetime(["2024-01-15", "2024-02-21", None]),
+        "glosa_libro":             ["pago luz enel", "transferencia juan", None],
+        "rut_libro":               ["19141427-6", "21493875-8", None],
+        "monto_libro":             [-100_000.0, -50_200.0, None],
+        "nro_referencia_libro":    ["1234567890", "XXXX567890", None],
+        "nro_comprobante_libro":   ["CP001", "CP002", None],
+        "codigo_tx_libro":         ["SRV001", "TRF002", None],
+        # — Match —
+        "tipo_match":              ["Exacto", "Sugerido", "Manual"],
+        "certeza":                 ["Exacto", "Sugerido", "Manual"],
+        "regla_aplicada":          ["RUT + Monto + Fecha", "RUT + Monto", ""],
+        "diff_monto":              [0.0, 200.0, None],
+        "diff_dias":               [0, 1, None],
+        "flag_conciliacion":       ["", "", ""],
+        "flag_iva":                ["", "", ""],
+        # — Antigüedad —
+        "dias_antiguedad":         [20, 60, 100],
+        "tramo_antiguedad":        ["Vigente", "En Observación", "Crítico"],
+        "accion_recomendada":      [
+            "Aprobado — sin acción requerida",
+            "Revisar y aprobar match manualmente",
+            "Investigar y contabilizar manualmente",
+        ],
+        # — Diagnóstico (solo sin match) —
+        "motivo":                  [None, None, "Monto coincide pero fecha fuera de rango"],
+        "fecha_cercana":           pd.to_datetime([None, None, "2024-01-15"]),
+        "monto_cercano":           [None, None, -100_000.0],
+        "glosa_cercana":           [None, None, "pago luz enel"],
+        "diff_monto_cercano":      [None, None, 300_000.0],
     })
 
 
@@ -70,8 +90,7 @@ class TestEscribirResultado:
             escribir_resultado(df_resultado)
         wb = load_workbook(archivo)
         ws = wb["Conciliación"]
-        # Verificar que los bloques están escritos en la fila 1
-        valores_fila1 = [ws.cell(row=1, column=c).value for c in [1, 6, 11]]
+        valores_fila1 = [ws.cell(row=1, column=c).value for c in [1, 8, 15]]
         assert "Cartola Personal" in valores_fila1
         assert "Libro del Banco"  in valores_fila1
         assert "Resultado"        in valores_fila1
@@ -84,8 +103,8 @@ class TestEscribirResultado:
             escribir_resultado(df_resultado)
         wb = load_workbook(archivo)
         ws = wb["Conciliación"]
-        assert ws.cell(row=2, column=1).value == "Fecha Cartola"
-        assert ws.cell(row=2, column=11).value == "Tipo Match"
+        assert ws.cell(row=2, column=1).value == "Fecha Operación"
+        assert ws.cell(row=2, column=15).value == "Tipo Match"
 
     def test_datos_empiezan_en_fila_3(self, df_resultado, tmp_path):
         """Los datos deben empezar en la fila 3."""
@@ -95,17 +114,17 @@ class TestEscribirResultado:
             escribir_resultado(df_resultado)
         wb = load_workbook(archivo)
         ws = wb["Conciliación"]
-        # 1 encabezado agrupado + 1 encabezado columna + N filas datos
         assert ws.max_row == len(df_resultado) + 2
 
     def test_cantidad_columnas_correcta(self, df_resultado, tmp_path):
+        """7 cartola + 7 libro + 10 resultado = 24 columnas."""
         archivo = tmp_path / "resultado.xlsx"
         with patch("reporting.writer.ARCHIVO_RESULTADO", archivo), \
              patch("reporting.writer.OUTPUT_DIR", tmp_path):
             escribir_resultado(df_resultado)
         wb = load_workbook(archivo)
         ws = wb["Conciliación"]
-        assert ws.max_column == 13
+        assert ws.max_column == 24
 
 
 # ─── escribir_sin_conciliar ───────────────────────────────────────────────────
@@ -128,7 +147,7 @@ class TestEscribirSinConciliar:
         assert "Sin Conciliar" in wb.sheetnames
 
     def test_solo_contiene_filas_sin_match(self, df_resultado, tmp_path):
-        """1 bloque + 1 encabezado + 1 fila sin_match = 3 filas."""
+        """1 bloque + 1 encabezado + 1 fila Manual = 3 filas."""
         archivo = tmp_path / "sin_conciliar.xlsx"
         with patch("reporting.writer.ARCHIVO_SIN_CONCILIAR", archivo), \
              patch("reporting.writer.OUTPUT_DIR", tmp_path):
@@ -138,7 +157,7 @@ class TestEscribirSinConciliar:
         assert ws.max_row == 3   # fila bloque + fila encabezado + 1 dato
 
     def test_tiene_10_columnas(self, df_resultado, tmp_path):
-        """5 cartola + 5 diagnóstico = 10 columnas."""
+        """7 cartola + 3 diagnóstico = 10 columnas."""
         archivo = tmp_path / "sin_conciliar.xlsx"
         with patch("reporting.writer.ARCHIVO_SIN_CONCILIAR", archivo), \
              patch("reporting.writer.OUTPUT_DIR", tmp_path):
@@ -154,7 +173,7 @@ class TestEscribirSinConciliar:
             escribir_sin_conciliar(df_resultado)
         wb = load_workbook(archivo)
         ws = wb["Sin Conciliar"]
-        valores = [ws.cell(row=1, column=c).value for c in [1, 6]]
+        valores = [ws.cell(row=1, column=c).value for c in [1, 8]]
         assert "Cartola Personal" in valores
         assert "Diagnóstico"      in valores
 
@@ -178,10 +197,9 @@ class TestArchivoBloqueado:
         """Si el archivo está bloqueado, debe lanzar ConciliadorError."""
         from utils.exceptions import ConciliadorError
         from unittest.mock import patch as mock_patch
-        from pathlib import Path
 
         archivo = tmp_path / "resultado.xlsx"
-        archivo.touch()  # crear archivo vacío para simular que existe
+        archivo.touch()
 
         with mock_patch("reporting.writer.ARCHIVO_RESULTADO", archivo), \
              mock_patch("reporting.writer.OUTPUT_DIR", tmp_path), \
@@ -203,6 +221,9 @@ class TestArchivoBloqueado:
             with pytest.raises(ConciliadorError, match="está abierto en Excel"):
                 escribir_sin_conciliar(df_resultado)
 
+
+# ─── Hoja Resumen ─────────────────────────────────────────────────────────────
+
 class TestHojaResumen:
 
     def _cargar_resumen(self, df_resultado, tmp_path):
@@ -220,11 +241,11 @@ class TestHojaResumen:
         ws = self._cargar_resumen(df_resultado, tmp_path)
         assert ws.cell(row=4, column=2).value == 1
 
-    def test_parciales_correcto(self, df_resultado, tmp_path):
+    def test_sugeridos_correcto(self, df_resultado, tmp_path):
         ws = self._cargar_resumen(df_resultado, tmp_path)
         assert ws.cell(row=5, column=2).value == 1
 
-    def test_sin_match_correcto(self, df_resultado, tmp_path):
+    def test_manuales_correcto(self, df_resultado, tmp_path):
         ws = self._cargar_resumen(df_resultado, tmp_path)
         assert ws.cell(row=6, column=2).value == 1
 
