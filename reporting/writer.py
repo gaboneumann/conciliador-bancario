@@ -1,5 +1,5 @@
 """
-writer.py — Escritura de archivos Excel de resultado.
+writer.py — Escritura de archivos Excel de resultado (v2).
 
 Responsabilidad: tomar el DataFrame clasificado y producir
 los archivos Excel de salida con formato aplicado.
@@ -50,36 +50,54 @@ def _verificar_archivo_disponible(ruta) -> None:
                 f"Ciérralo e intenta de nuevo."
             )
 
-# ─── Definición de columnas ───────────────────────────────────────────────────
 
+# ─── Definición de columnas v2 ────────────────────────────────────────────────
+
+# Reporte principal: 7 cartola + 7 libro + 10 resultado = 24 columnas
 ENCABEZADOS_RESULTADO = [
-    "Fecha Cartola", "Monto Cartola", "Descripción Cartola",
-    "Referencia Cartola", "Banco Cartola",
-    "Fecha Libro", "Monto Libro", "Descripción Libro",
-    "Referencia Libro", "Código Libro",
-    "Tipo Match", "Diferencia Monto", "Diferencia Días",
+    # — Cartola (7) —
+    "Fecha Operación", "Fecha Valor", "Glosa Cartola",
+    "RUT Cartola", "Monto Cartola", "Nº Documento", "Banco",
+    # — Libro (7) —
+    "Fecha Contable", "Glosa Libro",
+    "RUT Libro", "Monto Libro", "Nº Referencia", "Nº Comprobante", "Código Tx",
+    # — Resultado (10) —
+    "Tipo Match", "Certeza", "Regla Aplicada",
+    "Dif. Monto", "Dif. Días",
+    "Flag Conciliación", "Flag IVA",
+    "Días Antigüedad", "Tramo Antigüedad", "Acción Recomendada",
 ]
 
 COLUMNAS_RESULTADO = [
-    "fecha_cartola", "monto_cartola", "descripcion_cartola",
-    "referencia_cartola", "banco_cartola",
-    "fecha_libro", "monto_libro", "descripcion_libro",
-    "referencia_libro", "codigo_libro",
-    "tipo_match", "diff_monto", "diff_dias",
+    # — Cartola (7) —
+    "fecha_operacion_cartola", "fecha_valor_cartola", "glosa_cartola",
+    "rut_cartola", "monto_cartola", "nro_documento_cartola", "banco_cartola",
+    # — Libro (7) —
+    "fecha_contable_libro", "glosa_libro",
+    "rut_libro", "monto_libro", "nro_referencia_libro",
+    "nro_comprobante_libro", "codigo_tx_libro",
+    # — Resultado (10) —
+    "tipo_match", "certeza", "regla_aplicada",
+    "diff_monto", "diff_dias",
+    "flag_conciliacion", "flag_iva",
+    "dias_antiguedad", "tramo_antiguedad", "accion_recomendada",
 ]
 
+# Reporte sin conciliar: 7 cartola + 3 diagnóstico = 10 columnas
 ENCABEZADOS_SIN_CONCILIAR = [
-    "Fecha Cartola", "Monto Cartola", "Descripción Cartola",
-    "Referencia Cartola", "Banco Cartola",
-    "Motivo", "Fecha Más Cercana", "Monto Más Cercano",
-    "Descripción Más Cercana", "Diferencia Monto",
+    # — Cartola (7) —
+    "Fecha Operación", "Fecha Valor", "Glosa Cartola",
+    "RUT Cartola", "Monto Cartola", "Nº Documento", "Banco",
+    # — Diagnóstico (3) —
+    "Motivo", "Monto Más Cercano", "Dif. Monto Cercano",
 ]
 
 COLUMNAS_SIN_CONCILIAR = [
-    "fecha_cartola", "monto_cartola", "descripcion_cartola",
-    "referencia_cartola", "banco_cartola",
-    "motivo", "fecha_cercana", "monto_cercano",
-    "descripcion_cercana", "diff_monto_cercano",
+    # — Cartola (7) —
+    "fecha_operacion_cartola", "fecha_valor_cartola", "glosa_cartola",
+    "rut_cartola", "monto_cartola", "nro_documento_cartola", "banco_cartola",
+    # — Diagnóstico (3) —
+    "motivo", "monto_cercano", "diff_monto_cercano",
 ]
 
 # Columnas que reciben formato especial
@@ -87,7 +105,10 @@ COLS_MONTO = {
     "monto_cartola", "monto_libro", "diff_monto",
     "monto_cercano", "diff_monto_cercano",
 }
-COLS_FECHA = {"fecha_cartola", "fecha_libro", "fecha_cercana"}
+COLS_FECHA = {
+    "fecha_operacion_cartola", "fecha_valor_cartola",
+    "fecha_contable_libro", "fecha_cercana",
+}
 
 
 # ─── Función interna: fila de encabezados agrupados ──────────────────────────
@@ -95,9 +116,6 @@ COLS_FECHA = {"fecha_cartola", "fecha_libro", "fecha_cercana"}
 def _escribir_fila_bloques(ws, bloques: list) -> None:
     """
     Escribe la fila 1 con encabezados agrupados y merge de celdas.
-
-    Para cada bloque fusiona las celdas del rango y aplica el color
-    correspondiente al bloque (cartola, libro, resultado, diagnostico).
 
     Args:
         ws     : Hoja de openpyxl activa
@@ -111,7 +129,6 @@ def _escribir_fila_bloques(ws, bloques: list) -> None:
         nombre  = bloque["nombre"]
         tipo    = bloque["bloque"]
 
-        # Merge de celdas del bloque
         if col_ini < col_fin:
             ws.merge_cells(
                 start_row=1, start_column=col_ini,
@@ -170,8 +187,9 @@ def _escribir_hoja(
 
     # — Fila 3+: datos —
     for row_idx, (_, fila) in enumerate(df[columnas].iterrows(), start=3):
-        tipo_match = fila.get("tipo_match", "sin_match")
-        estilo     = estilo_fila(tipo_match)
+        tipo_match        = fila.get("tipo_match", "Manual")
+        flag_conciliacion = fila.get("flag_conciliacion", "")
+        estilo            = estilo_fila(tipo_match, flag_conciliacion=flag_conciliacion)
 
         for col_idx, col_nombre in enumerate(columnas, start=1):
             valor = fila[col_nombre]
@@ -277,18 +295,18 @@ def _escribir_resumen(ws, df: pd.DataFrame, saldo: dict | None) -> None:
     ws.sheet_view.showGridLines = False
 
     total     = len(df)
-    exactos   = (df["tipo_match"] == "exacto").sum()
-    parciales = (df["tipo_match"] == "parcial").sum()
-    sin_match = (df["tipo_match"] == "sin_match").sum()
-    pct_conc  = round((exactos + parciales) / total * 100, 1) if total > 0 else 0
+    exactos   = (df["tipo_match"] == "Exacto").sum()
+    sugeridos = (df["tipo_match"] == "Sugerido").sum()
+    manuales  = (df["tipo_match"] == "Manual").sum()
+    pct_conc  = round((exactos + sugeridos) / total * 100, 1) if total > 0 else 0
 
     filas = [
         ("Resumen de Conciliación", ""),
         ("", ""),
         ("Total transacciones cartola", total),
-        ("Match exacto",               exactos),
-        ("Match parcial",              parciales),
-        ("Sin match",                  sin_match),
+        ("Match Exacto",               exactos),
+        ("Match Sugerido",             sugeridos),
+        ("Sin Match (Manual)",         manuales),
         ("% Conciliado",               f"{pct_conc}%"),
     ]
 
@@ -319,7 +337,6 @@ def _escribir_resumen(ws, df: pd.DataFrame, saldo: dict | None) -> None:
             celda_a.font = estilo_dato["font"]
             celda_b.font = estilo_dato["font"]
 
-        # Formato numérico para montos del saldo
         if isinstance(valor, (int, float)) and etiqueta in (
             "Saldo Cartola", "Saldo Libro", "Diferencia"
         ):
