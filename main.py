@@ -1,13 +1,13 @@
 """
-main.py — Orquestador del Conciliador Bancario.
+main.py — Orquestador del Conciliador Bancario v2.
 
 Ejecuta el flujo completo de conciliación:
-    1. Leer archivos Excel de entrada
-    2. Normalizar datos
-    3. Hacer matching
-    4. Clasificar resultados
+    1. Leer archivos Excel de entrada (estructura v2 con RUT)
+    2. Normalizar datos (fecha_valor, glosa, rut normalizado)
+    3. Hacer matching (jerarquía RUT → Monto → Fecha → Referencia)
+    4. Clasificar resultados (certeza Exacto/Sugerido/Manual, antigüedad)
     5. Calcular diferencia de saldo
-    6. Escribir outputs
+    6. Escribir outputs (columnas v2, flags, acción recomendada)
 
 Uso:
     python main.py
@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 
 def main():
     logger.info("=" * 50)
-    logger.info("  Conciliador Bancario — Iniciando proceso")
+    logger.info("  Conciliador Bancario v2 — Iniciando proceso")
     logger.info("=" * 50)
 
     try:

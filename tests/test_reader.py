@@ -1,5 +1,5 @@
 """
-test_reader.py — Tests para ingestion/reader.py
+test_reader.py — Tests para ingestion/reader.py (v2)
 """
 import pytest
 import pandas as pd
@@ -16,14 +16,17 @@ from config.config import COLUMNAS_CARTOLA, COLUMNAS_LIBRO
 @pytest.fixture
 def cartola_excel(tmp_path) -> Path:
     """Crea un Excel de cartola válido en una carpeta temporal."""
-    ruta = tmp_path / "cartola_personal.xlsx"
+    ruta = tmp_path / "cartola_bancaria.xlsx"
     df = pd.DataFrame({
-        "Fecha Operación":        ["2024-01-01", "2024-01-02"],
-        "Descripción Operación":  ["Transferencia a Juan", "Pago Luz Enel"],
-        "Cargo (CLP)":            [100000, 50000],
-        "Abono (CLP)":            [None, None],
-        "Referencia Interna":     ["1234567890", "0987654321"],
-        "Banco/Institución":      ["Banco de Chile", "BancoEstado"],
+        "Fecha Operación":      ["2024-01-01", "2024-01-02"],
+        "Fecha Valor":          ["2024-01-02", "2024-01-03"],
+        "Glosa":                ["Transferencia a Juan", "Pago Luz Enel"],
+        "RUT Origen/Destino":   ["19.141.427-6", "21493875-8"],
+        "Cargos (CLP)":         [100000, 50000],
+        "Abonos (CLP)":         [None, None],
+        "Saldo Disponible":     [900000, 850000],
+        "Nº Documento":         ["1234567890", "0987654321"],
+        "Banco/Institución":    ["Banco de Chile", "BancoEstado"],
     })
     df.to_excel(ruta, index=False)
     return ruta
@@ -31,15 +34,18 @@ def cartola_excel(tmp_path) -> Path:
 
 @pytest.fixture
 def libro_excel(tmp_path) -> Path:
-    """Crea un Excel de libro válido en una carpeta temporal."""
-    ruta = tmp_path / "libro_banco.xlsx"
+    """Crea un Excel de libro auxiliar válido en una carpeta temporal."""
+    ruta = tmp_path / "libro_auxiliar.xlsx"
     df = pd.DataFrame({
-        "Fecha Contable":     ["2024-01-01", "2024-01-02"],
-        "Descripción":        ["Transferencia a Juan", "Pago Luz Enel"],
-        "Monto Débito":       [100000, 50000],
-        "Monto Crédito":      [None, None],
-        "Número Referencia":  ["1234567890", "0987654321"],
-        "Código Transacción": ["TRF001", "SRV002"],
+        "Fecha Contable":       ["2024-01-01", "2024-01-02"],
+        "Glosa Contable":       ["Transferencia a Juan", "Pago Luz Enel"],
+        "RUT Auxiliar":         ["19.141.427-6", "21493875-8"],
+        "Debe (CLP)":           [100000, 50000],
+        "Haber (CLP)":          [None, None],
+        "Saldo":                [900000, 850000],
+        "Nº Referencia":        ["1234567890", "0987654321"],
+        "Nº Comprobante":       ["COMP001", "COMP002"],
+        "Código Transacción":   ["TRF001", "SRV002"],
     })
     df.to_excel(ruta, index=False)
     return ruta

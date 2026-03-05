@@ -1,32 +1,13 @@
 """
-Errores de nuestro dataset:
+normalizer.py — Limpieza y estandarización de DataFrames crudos (v2).
 
-- Fechas como strings ("2024-01-15") en vez de datetime
-- Descripciones con espacios extra, mayúsculas inconsistentes, acentos
-- Montos con NaN, negativos o cero
-- Referencias con caracteres extraños o truncadas
-- Columnas con nombres distintos en cada archivo
+Esquema de salida garantizado:
 
-1. Renombra columnas  → de nombres Excel a nombres internos
-2. Parsea fechas      → string a datetime
-3. Limpia montos      → unifica cargo/abono en un solo monto con signo
-4. Limpia texto       → strip, lowercase, normaliza acentos
-5. Limpia referencias → solo caracteres alfanuméricos
-6. Elimina nulos      → filas donde el monto es NaN
-"""
+    Cartola:
+        fecha_operacion, fecha_valor, glosa, rut, monto, nro_documento, banco
 
-
-"""
-normalizer.py — Limpieza y estandarización de DataFrames crudos.
-
-Responsabilidad: transformar los datos tal como vienen del Excel
-en un formato predecible y consistente para el motor de conciliación.
-
-Esquema de salida garantizado para ambos archivos:
-    - fecha        : datetime64
-    - descripcion  : str (lowercase, sin espacios extra, sin acentos)
-    - monto        : float (negativo=egreso, positivo=ingreso)
-    - referencia   : str (alfanumérico, uppercase)
+    Libro:
+        fecha_contable, glosa, rut, monto, nro_referencia, nro_comprobante, codigo_tx
 """
 import re
 import unicodedata
@@ -35,6 +16,7 @@ import pandas as pd
 from config.config import COLUMNAS_CARTOLA, COLUMNAS_LIBRO
 from utils.logger import get_logger
 from utils.exceptions import NormalizacionError
+from utils.rut_utils import normalizar_rut
 
 logger = get_logger(__name__)
 
@@ -48,14 +30,9 @@ def _normalizar_texto(texto: str) -> str:
       2. Colapsa espacios internos múltiples en uno solo
       3. Convierte a minúsculas
       4. Elimina acentos (á→a, é→e, ñ→n, etc.)
-
-    Ejemplo:
-        "  PAGO Luz  Enel  " → "pago luz enel"
-        "Transferéncia"      → "transferencia"
     """
     if not isinstance(texto, str):
         return ""
-    # Eliminar acentos usando normalización Unicode
     texto = unicodedata.normalize("NFD", texto)
     texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
     texto = texto.strip().lower()
@@ -65,14 +42,8 @@ def _normalizar_texto(texto: str) -> str:
 
 def _normalizar_referencia(ref) -> str:
     """
-    Estandariza una referencia interna:
-      - Solo caracteres alfanuméricos
-      - Uppercase
-      - Vacío si es nulo
-
-    Ejemplo:
-        "1234X??"  → "1234X"
-        "ref-5678" → "REF5678"
+    Estandariza una referencia: solo alfanumérico, uppercase.
+    Retorna vacío si es nulo.
     """
     if pd.isna(ref) or str(ref).strip() == "":
         return ""
@@ -80,37 +51,48 @@ def _normalizar_referencia(ref) -> str:
     return re.sub(r"[^A-Z0-9]", "", ref)
 
 
-def _parsear_fecha(serie: pd.Series, nombre_archivo: str) -> pd.Series:
-    """
-    Convierte una Serie de fechas (string o mixed) a datetime.
-    Lanza NormalizacionError si no puede parsear ninguna fecha.
-    """
+def _parsear_fecha(serie: pd.Series, nombre_columna: str) -> pd.Series:
+    """Convierte una Serie de fechas a datetime64."""
     try:
         return pd.to_datetime(serie, dayfirst=False, errors="coerce")
     except Exception as e:
         raise NormalizacionError(
             f"No se pudo parsear la columna de fechas: {e}",
-            columna="fecha"
+            columna=nombre_columna
         )
 
 
-# Normalizadores principales
+def _normalizar_rut_serie(serie: pd.Series) -> pd.Series:
+    """
+    Aplica normalizar_rut() a cada elemento de la Serie.
+    Retorna el canonical si es válido, None si no.
+    """
+    def _extraer_canonical(valor):
+        resultado = normalizar_rut(valor)
+        return resultado["canonical"] if resultado["es_valido"] else None
+
+    return serie.apply(_extraer_canonical)
+
+
+# ─── Normalizadores principales ───────────────────────────────────────────────
 
 def normalizar_cartola(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Normaliza el DataFrame crudo de la cartola personal.
+    Normaliza el DataFrame crudo de la cartola bancaria.
 
     Pasos:
         1. Renombra columnas Excel → nombres internos
-        2. Parsea fechas
-        3. Unifica cargo/abono en un monto con signo
-        4. Limpia descripcion y referencia
-        5. Elimina filas sin monto válido
+        2. Parsea fecha_operacion y fecha_valor
+        3. Normaliza RUT
+        4. Unifica cargo/abono en monto con signo
+        5. Limpia glosa y nro_documento
+        6. Elimina filas sin monto válido
 
     Returns:
-        DataFrame con columnas: fecha, descripcion, monto, referencia, banco
+        DataFrame con columnas:
+        fecha_operacion, fecha_valor, glosa, rut, monto, nro_documento, banco
     """
-    logger.info("Normalizando cartola personal...")
+    logger.info("Normalizando cartola bancaria...")
     df = df.copy()
 
     # — 1. Renombrar columnas —
@@ -118,20 +100,22 @@ def normalizar_cartola(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns=inverso)
 
     # — 2. Parsear fechas —
-    df["fecha"] = _parsear_fecha(df["fecha"], "cartola")
+    df["fecha_operacion"] = _parsear_fecha(df["fecha_operacion"], "fecha_operacion")
+    df["fecha_valor"]     = _parsear_fecha(df["fecha_valor"],     "fecha_valor")
 
-    # — 3. Unificar cargo y abono en monto con signo —
-    # cargo  → negativo (sale dinero)
-    # abono  → positivo (entra dinero)
+    # — 3. Normalizar RUT —
+    df["rut"] = _normalizar_rut_serie(df["rut"])
+
+    # — 4. Unificar cargo/abono en monto con signo —
     cargo = pd.to_numeric(df["cargo"], errors="coerce").fillna(0)
     abono = pd.to_numeric(df["abono"], errors="coerce").fillna(0)
     df["monto"] = abono - cargo
 
-    # — 4. Limpiar texto —
-    df["descripcion"] = df["descripcion"].apply(_normalizar_texto)
-    df["referencia"]  = df["referencia"].apply(_normalizar_referencia)
+    # — 5. Limpiar texto —
+    df["glosa"]        = df["glosa"].apply(_normalizar_texto)
+    df["nro_documento"] = df["nro_documento"].apply(_normalizar_referencia)
 
-    # — 5. Eliminar filas sin monto válido —
+    # — 6. Eliminar filas sin monto válido —
     n_antes = len(df)
     df = df[df["monto"] != 0].copy()
     n_eliminadas = n_antes - len(df)
@@ -140,45 +124,49 @@ def normalizar_cartola(df: pd.DataFrame) -> pd.DataFrame:
 
     logger.info(f"Cartola normalizada: {len(df)} filas válidas")
 
-    return df[["fecha", "descripcion", "monto", "referencia", "banco"]].reset_index(drop=True)
+    columnas_salida = ["fecha_operacion", "fecha_valor", "glosa", "rut", "monto", "nro_documento", "banco"]
+    return df[columnas_salida].reset_index(drop=True)
 
 
 def normalizar_libro(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Normaliza el DataFrame crudo del libro del banco.
+    Normaliza el DataFrame crudo del libro auxiliar.
 
     Pasos:
         1. Renombra columnas Excel → nombres internos
-        2. Parsea fechas
-        3. Unifica debito/credito en un monto con signo
-        4. Limpia descripcion y referencia
-        5. Elimina filas sin monto válido
+        2. Parsea fecha_contable
+        3. Normaliza RUT
+        4. Unifica debe/haber en monto con signo
+        5. Limpia glosa y nro_referencia
+        6. Elimina filas sin monto válido
 
     Returns:
-        DataFrame con columnas: fecha, descripcion, monto, referencia, codigo
+        DataFrame con columnas:
+        fecha_contable, glosa, rut, monto, nro_referencia, nro_comprobante, codigo_tx
     """
-    logger.info("Normalizando libro del banco...")
+    logger.info("Normalizando libro auxiliar...")
     df = df.copy()
 
     # — 1. Renombrar columnas —
     inverso = {v: k for k, v in COLUMNAS_LIBRO.items()}
     df = df.rename(columns=inverso)
 
-    # — 2. Parsear fechas —
-    df["fecha"] = _parsear_fecha(df["fecha"], "libro")
+    # — 2. Parsear fecha —
+    df["fecha_contable"] = _parsear_fecha(df["fecha_contable"], "fecha_contable")
 
-    # — 3. Unificar debito y credito en monto con signo —
-    # debito  → negativo (sale dinero)
-    # credito → positivo (entra dinero)
-    debito  = pd.to_numeric(df["debito"],  errors="coerce").fillna(0)
-    credito = pd.to_numeric(df["credito"], errors="coerce").fillna(0)
-    df["monto"] = credito - debito
+    # — 3. Normalizar RUT —
+    df["rut"] = _normalizar_rut_serie(df["rut"])
 
-    # — 4. Limpiar texto —
-    df["descripcion"] = df["descripcion"].apply(_normalizar_texto)
-    df["referencia"]  = df["referencia"].apply(_normalizar_referencia)
+    # — 4. Unificar debe/haber en monto con signo —
+    debe  = pd.to_numeric(df["debe"],  errors="coerce").fillna(0)
+    haber = pd.to_numeric(df["haber"], errors="coerce").fillna(0)
+    df["monto"] = haber - debe
 
-    # — 5. Eliminar filas sin monto válido —
+    # — 5. Limpiar texto —
+    df["glosa"]         = df["glosa"].apply(_normalizar_texto)
+    df["nro_referencia"] = df["nro_referencia"].apply(_normalizar_referencia)
+
+    # — 6. Eliminar filas sin monto válido —
     n_antes = len(df)
     df = df[df["monto"] != 0].copy()
     n_eliminadas = n_antes - len(df)
@@ -187,4 +175,5 @@ def normalizar_libro(df: pd.DataFrame) -> pd.DataFrame:
 
     logger.info(f"Libro normalizado: {len(df)} filas válidas")
 
-    return df[["fecha", "descripcion", "monto", "referencia", "codigo"]].reset_index(drop=True)
+    columnas_salida = ["fecha_contable", "glosa", "rut", "monto", "nro_referencia", "nro_comprobante", "codigo_tx"]
+    return df[columnas_salida].reset_index(drop=True)
