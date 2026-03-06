@@ -57,7 +57,7 @@ COLUMNAS_LIBRO = {
 # ─── Tolerancias de matching ──────────────────────────────────────────────────
 TOLERANCIA_MONTO_PCT      = 0.02    # ±2% de diferencia relativa en monto
 TOLERANCIA_MONTO_ABS_MAX  = 5_000   # cap absoluto en CLP — evita que millones pasen por estar bajo el 2%
-TOLERANCIA_DIAS           = 3       # ±3 días entre fecha_valor (cartola) y fecha_contable (libro)
+TOLERANCIA_DIAS           = 5       # ±5 días entre fecha_valor (cartola) y fecha_contable (libro)
 TOLERANCIA_REFERENCIA     = 6       # primeros 6 caracteres de Nº Documento vs Nº Referencia
 FACTOR_IVA                = 1.19    # ratio esperado para detección neto vs bruto
 TOLERANCIA_IVA            = 0.01    # ±1% sobre el ratio 1.19
