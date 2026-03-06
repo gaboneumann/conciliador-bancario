@@ -57,7 +57,6 @@ def _calcular_accion(tipo_match: str, flag_iva: str, flag_conciliacion: str, mot
         return "Aprobado — sin acción requerida"
     if tipo_match == CERTEZA_SUGERIDO:
         return "Revisar y aprobar match manualmente"
-    # Manual — acción según motivo específico
     mapa_motivos = {
         "Monto coincide pero fecha fuera de rango": "Revisar fecha — monto OK, desfase > 5 días",
         "Fecha coincide pero monto no encontrado":  "Revisar monto — fecha OK, sin coincidencia",
