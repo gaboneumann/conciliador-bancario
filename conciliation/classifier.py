@@ -50,16 +50,21 @@ def _calcular_tramo(dias: int) -> str:
 
 def _calcular_accion(tipo_match: str, flag_iva: str, flag_conciliacion: str, motivo: str) -> str:
     if flag_iva:
-        return "Revisar registro Neto vs Bruto — verificar IVA"
+        return "Revisar IVA — posible neto vs bruto"
     if flag_conciliacion:
-        return "Registrar como Partida en Conciliación — verificar cierre de mes"
+        return "Partida en Conciliación — verificar cierre de mes"
     if tipo_match == CERTEZA_EXACTO:
         return "Aprobado — sin acción requerida"
     if tipo_match == CERTEZA_SUGERIDO:
         return "Revisar y aprobar match manualmente"
-    # Manual — acción según diagnóstico
-    return f"Investigar y contabilizar manualmente — {motivo}" if motivo else "Investigar y contabilizar manualmente"
-
+    # Manual — acción según motivo específico
+    mapa_motivos = {
+        "Monto coincide pero fecha fuera de rango": "Revisar fecha — monto OK, desfase > 5 días",
+        "Fecha coincide pero monto no encontrado":  "Revisar monto — fecha OK, sin coincidencia",
+        "Posible Neto vs Bruto (×1.19)":            "Verificar IVA — posible neto vs bruto",
+        "Transacción ausente en libro auxiliar":    "Ausente en libro — verificar omisión",
+    }
+    return mapa_motivos.get(motivo, "Revisar manualmente") if motivo else "Revisar manualmente"
 
 # ─── Clasificador principal ───────────────────────────────────────────────────
 
