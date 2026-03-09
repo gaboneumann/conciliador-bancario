@@ -143,8 +143,8 @@ class TestEstilosAdicionales:
 
 class TestAnchos:
 
-    def test_anchos_resultado_tiene_13_columnas(self):
-        assert len(ANCHOS_RESULTADO) == 13
+    def test_anchos_resultado_tiene_24_columnas(self):
+        assert len(ANCHOS_RESULTADO) == 24
 
     def test_anchos_sin_conciliar_tiene_10_columnas(self):
         """Ahora tiene 5 cartola + 5 diagnóstico."""
@@ -165,12 +165,11 @@ class TestBloques:
     def test_sin_conciliar_tiene_dos_bloques(self):
         assert len(BLOQUES_SIN_CONCILIAR) == 2
 
-    def test_bloques_resultado_cubren_13_columnas(self):
-        """Los bloques deben cubrir exactamente las columnas 1 a 13."""
+    def test_bloques_resultado_cubren_24_columnas(self):
         col_inicio = BLOQUES_RESULTADO[0]["col_inicio"]
         col_fin    = BLOQUES_RESULTADO[-1]["col_fin"]
         assert col_inicio == 1
-        assert col_fin    == 13
+        assert col_fin    == 24
 
     def test_bloques_sin_conciliar_cubren_10_columnas(self):
         col_inicio = BLOQUES_SIN_CONCILIAR[0]["col_inicio"]

@@ -215,7 +215,7 @@ class TestAccionRecomendada:
             "idx_libro_cercano": None,
         }]
         df = clasificar(cartola, libro, resultados)
-        assert df.loc[0, "accion_recomendada"] == "Revisar registro Neto vs Bruto — verificar IVA"
+        assert df.loc[0, "accion_recomendada"] == "Revisar IVA — posible neto vs bruto"
 
 
 # ─── calcular_diferencia_saldo ────────────────────────────────────────────────

@@ -80,14 +80,12 @@ class TestRutas:
 class TestColumnas:
 
     def test_cartola_tiene_claves_requeridas(self):
-        """La cartola debe tener mapeadas todas las columnas necesarias."""
-        claves_requeridas = {"fecha", "descripcion", "cargo", "abono", "referencia", "banco"}
+        claves_requeridas = {"fecha_operacion", "fecha_valor", "glosa", "rut", "cargo", "abono", "banco"}
         assert claves_requeridas.issubset(COLUMNAS_CARTOLA.keys())
 
     def test_libro_tiene_claves_requeridas(self):
-        """El libro debe tener mapeadas todas las columnas necesarias."""
-        claves_requeridas = {"fecha", "descripcion", "debito", "credito", "referencia", "codigo"}
-        assert claves_requeridas.issubset(COLUMNAS_LIBRO.keys())
+        claves_requeridas = {"fecha_contable", "glosa", "rut", "debe", "haber", "nro_referencia", "nro_comprobante", "codigo_tx"}
+        assert claves_requeridas.issubset(COLUMNAS_LIBRO.keys())   
 
     def test_valores_columnas_son_strings(self):
         """Los valores del mapeo deben ser strings no vacíos."""
@@ -124,6 +122,6 @@ class TestTolerancias:
         """Verificamos que el valor configurado es exactamente 2%."""
         assert TOLERANCIA_MONTO_PCT == 0.02
 
-    def test_tolerancia_dias_es_tres(self):
-        """Verificamos que el valor configurado es exactamente 3 días."""
-        assert TOLERANCIA_DIAS == 3
+    def test_tolerancia_dias_es_cinco(self):
+        """Verificamos que el valor configurado es exactamente 5 días."""
+        assert TOLERANCIA_DIAS == 5

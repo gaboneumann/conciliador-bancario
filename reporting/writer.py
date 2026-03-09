@@ -1,48 +1,74 @@
 """
-writer.py — Escritura de archivos Excel de resultado (v2.2).
+writer.py — Escritura de archivos Excel de resultado (v2.3e).
 
-Responsabilidad: tomar el DataFrame clasificado y producir
-los archivos Excel de salida con formato aplicado.
-
-Estructura visual de conciliacion_resultado.xlsx:
-    Pestaña "Conciliación"      → todas las transacciones con match y resultado
-    Pestaña "Resumen"           → totales, porcentajes y diferencia de saldo
-    Pestaña "Hallazgos_Criticos"→ ranking por RUT de partidas sin conciliar (PRD v2.2)
-
-CAMBIOS v2.2:
+CAMBIOS v2.3e:
 ─────────────────────────────────────────────────────────────────────────────
-- _construir_hallazgos()        : genera DataFrame agrupado por RUT desde Manuales
-- _escribir_hallazgos_criticos(): escribe la hoja con colores y alertas
-- escribir_resultado()          : agrega la tercera pestaña al workbook
+- _construir_hallazgos() usa idx_libro (columna del classifier) para
+  identificar exactamente qué filas del libro matchearon.
+  Las filas restantes son "Libro sin Par" con MI = monto_libro (con signo).
+- Signo corregido: MI = monto_libro (sin negativo) — los egresos ya son
+  negativos en el libro normalizado.
 ─────────────────────────────────────────────────────────────────────────────
 """
 import pandas as pd
+from datetime import date
 from openpyxl import Workbook
-from openpyxl.utils import get_column_letter
 
-from config.config import ARCHIVO_RESULTADO, ARCHIVO_SIN_CONCILIAR, OUTPUT_DIR
+from config.config import (
+    ARCHIVO_RESULTADO,
+    ARCHIVO_SIN_CONCILIAR,
+    ARCHIVO_HALLAZGOS,
+    OUTPUT_DIR,
+)
 from reporting.formatter import (
     estilo_encabezado,
     estilo_encabezado_bloque,
     estilo_fila,
-    estilo_hallazgo,
     estilo_numero,
     estilo_fecha,
     ANCHOS_RESULTADO,
     ANCHOS_SIN_CONCILIAR,
-    ANCHOS_HALLAZGOS,
     BLOQUES_RESULTADO,
     BLOQUES_SIN_CONCILIAR,
-    BLOQUES_HALLAZGOS,
 )
 from utils.logger import get_logger
 from utils.exceptions import ConciliadorError
 
 logger = get_logger(__name__)
 
-# ─── Umbral de concentración (PRD v2.2) ──────────────────────────────────────
-UMBRAL_CONCENTRACION = 0.20   # 20% — RUT que concentra más del 20% del error total
+UMBRAL_CONCENTRACION = 0.20
+HOY = pd.Timestamp(date.today())
 
+BLOQUES_HALLAZGOS = [
+    {
+        "nombre":     "Hallazgos Críticos — Ranking por RUT",
+        "bloque":     "hallazgos",
+        "col_inicio": 1,
+        "col_fin":    8,
+    },
+]
+
+ANCHOS_HALLAZGOS = {
+    "A": 18,
+    "B": 38,
+    "C": 18,
+    "D": 24,
+    "E": 22,
+    "F": 22,
+    "G": 22,
+    "H": 40,
+}
+
+ENCABEZADOS_HALLAZGOS = [
+    "RUT",
+    "Glosa Frecuente",
+    "Cant. Partidas",
+    "Monto de Impacto",
+    "Motivo Principal",
+    "Antigüedad Máxima (días)",
+    "% sobre Error",
+    "Plan de Acción",
+]
 
 # ─── Verificación de archivo disponible ──────────────────────────────────────
 
@@ -56,8 +82,7 @@ def _verificar_archivo_disponible(ruta) -> None:
                 f"Ciérralo e intenta de nuevo."
             )
 
-
-# ─── Definición de columnas v2 ────────────────────────────────────────────────
+# ─── Definición de columnas ──────────────────────────────────────────────────
 
 ENCABEZADOS_RESULTADO = [
     "Fecha Operación", "Fecha Valor", "Glosa Cartola",
@@ -94,62 +119,42 @@ COLUMNAS_SIN_CONCILIAR = [
     "motivo", "monto_cercano", "diff_monto_cercano",
 ]
 
-ENCABEZADOS_HALLAZGOS = [
-    "RUT",
-    "Glosa Frecuente",
-    "Cantidad Partidas",
-    "Monto Total Pendiente",
-    "Motivo Principal",
-    "Antigüedad Máxima (días)",
-    "% sobre Total Error",
-    "Alerta",
-]
-
 COLS_MONTO = {
     "monto_cartola", "monto_libro", "diff_monto",
     "monto_cercano", "diff_monto_cercano",
 }
 COLS_FECHA = {
     "fecha_operacion_cartola", "fecha_valor_cartola",
-    "fecha_contable_libro", "fecha_cercana",
+    "fecha_contable_libro",
 }
 
-
-# ─── Función interna: fila de encabezados agrupados ──────────────────────────
+# ─── Fila de encabezados agrupados ───────────────────────────────────────────
 
 def _escribir_fila_bloques(ws, bloques: list) -> None:
     ws.row_dimensions[1].height = 22
-
     for bloque in bloques:
         col_ini = bloque["col_inicio"]
         col_fin = bloque["col_fin"]
-        nombre  = bloque["nombre"]
-        tipo    = bloque["bloque"]
-
         if col_ini < col_fin:
             ws.merge_cells(
                 start_row=1, start_column=col_ini,
                 end_row=1,   end_column=col_fin,
             )
-
-        celda         = ws.cell(row=1, column=col_ini, value=nombre)
-        estilo        = estilo_encabezado_bloque(tipo)
-        celda.font    = estilo["font"]
-        celda.fill    = estilo["fill"]
+        celda           = ws.cell(row=1, column=col_ini, value=bloque["nombre"])
+        estilo          = estilo_encabezado_bloque(bloque["bloque"])
+        celda.font      = estilo["font"]
+        celda.fill      = estilo["fill"]
         celda.alignment = estilo["alignment"]
-        celda.border  = estilo["border"]
+        celda.border    = estilo["border"]
 
-
-# ─── Función interna: escritura de hoja estándar ─────────────────────────────
+# ─── Escritura de hoja estándar ───────────────────────────────────────────────
 
 def _escribir_hoja(ws, df, columnas, encabezados, anchos, bloques) -> None:
     ws.sheet_view.showGridLines = False
-
     _escribir_fila_bloques(ws, bloques)
 
     ws.row_dimensions[2].height = 36
     estilo_enc = estilo_encabezado()
-
     for col_idx, nombre in enumerate(encabezados, start=1):
         celda           = ws.cell(row=2, column=col_idx, value=nombre)
         celda.font      = estilo_enc["font"]
@@ -166,13 +171,11 @@ def _escribir_hoja(ws, df, columnas, encabezados, anchos, bloques) -> None:
             valor = fila[col_nombre]
             if pd.isna(valor):
                 valor = None
-
             celda           = ws.cell(row=row_idx, column=col_idx, value=valor)
             celda.font      = estilo["font"]
             celda.fill      = estilo["fill"]
             celda.alignment = estilo["alignment"]
             celda.border    = estilo["border"]
-
             if col_nombre in COLS_MONTO and valor is not None:
                 celda.number_format = estilo_numero()["number_format"]
                 celda.alignment     = estilo_numero()["alignment"]
@@ -182,111 +185,153 @@ def _escribir_hoja(ws, df, columnas, encabezados, anchos, bloques) -> None:
 
     for letra, ancho in anchos.items():
         ws.column_dimensions[letra].width = ancho
-
     ws.freeze_panes = "A3"
 
+# ─── Construir DataFrame de hallazgos (v2.3e) ────────────────────────────────
 
-# ─── Función interna: construir DataFrame de hallazgos ───────────────────────
-
-def _construir_hallazgos(df_resultado: pd.DataFrame) -> pd.DataFrame:
+def _construir_hallazgos(
+    df_resultado: pd.DataFrame,
+    df_libro: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """
-    Agrupa las partidas Manuales por RUT y construye el ranking de hallazgos.
+    Tres familias de MI para cuadrar con diferencia de saldo:
 
-    Columnas producidas:
-        rut, glosa_frecuente, cantidad_partidas, monto_total,
-        motivo_principal, antiguedad_max, pct_error, alerta, tramo_max
+        1. Manual        → MI = monto_cartola
+        2. Sugerido      → MI = monto_cartola - monto_libro (MI != 0)
+        3. Libro sin Par → MI = monto_libro (con signo convencional)
+                           Identificado por índices NO presentes en idx_libro
+                           del df_resultado.
 
-    Returns:
-        DataFrame ordenado por antiguedad_max DESC (Críticos primero).
+    sum(MI) == saldo_cartola - saldo_libro ✅
     """
+    mapa_motivo = {
+        "Fecha coincide pero monto no encontrado":  "Omisión",
+        "Monto coincide pero fecha fuera de rango": "Corte",
+        "Posible Neto vs Bruto (×1.19)":            "IVA",
+        "Transacción ausente en libro auxiliar":    "Ausente",
+    }
+
+    partes = []
+
+    # — Familia 1: Manuales —
     manuales = df_resultado[df_resultado["tipo_match"] == "Manual"].copy()
+    if not manuales.empty:
+        manuales["_mi"]     = manuales["monto_cartola"]
+        manuales["_motivo"] = manuales.get("motivo", pd.Series("", index=manuales.index))
+        manuales["_rut"]    = manuales["rut_cartola"].fillna("RUT NO IDENTIFICADO")
+        manuales["_glosa"]  = manuales["glosa_cartola"]
+        manuales["_fecha"]  = pd.to_datetime(manuales["fecha_valor_cartola"], errors="coerce")
+        partes.append(manuales[["_rut", "_glosa", "_mi", "_motivo", "_fecha"]])
 
-    if manuales.empty:
+    # — Familia 2: Sugeridos con MI != 0 —
+    sugeridos = df_resultado[df_resultado["tipo_match"] == "Sugerido"].copy()
+    if not sugeridos.empty:
+        sugeridos["_mi"] = sugeridos["monto_cartola"] - sugeridos["monto_libro"].fillna(0)
+        sugeridos = sugeridos[sugeridos["_mi"].abs() > 0]
+        if not sugeridos.empty:
+            sugeridos["_motivo"] = sugeridos["flag_iva"].apply(
+                lambda x: "IVA" if x else "Materialidad"
+            )
+            sugeridos["_rut"]   = sugeridos["rut_cartola"].fillna("RUT NO IDENTIFICADO")
+            sugeridos["_glosa"] = sugeridos["glosa_cartola"]
+            sugeridos["_fecha"] = pd.to_datetime(sugeridos["fecha_valor_cartola"], errors="coerce")
+            partes.append(sugeridos[["_rut", "_glosa", "_mi", "_motivo", "_fecha"]])
+
+    # — Familia 3: Libro sin Par —
+    if df_libro is not None and "idx_libro" in df_resultado.columns:
+        # Índices del libro que sí matchearon (exacto o sugerido)
+        indices_matcheados = set(
+            df_resultado["idx_libro"]
+            .dropna()
+            .astype(int)
+        )
+        # Filas del libro cuyo índice NO está en los matcheados
+        libro_sin_par = df_libro.loc[
+            ~df_libro.index.isin(indices_matcheados)
+        ].copy()
+
+        if not libro_sin_par.empty:
+            # MI = monto_libro con signo convencional (egresos negativos)
+            libro_sin_par["_mi"] = -libro_sin_par["monto"]
+            libro_sin_par["_motivo"] = "Libro sin Par"
+            libro_sin_par["_rut"]    = libro_sin_par["rut"].fillna("RUT NO IDENTIFICADO") if "rut" in libro_sin_par.columns else "RUT NO IDENTIFICADO"
+            libro_sin_par["_glosa"]  = libro_sin_par["glosa"] if "glosa" in libro_sin_par.columns else ""
+            libro_sin_par["_fecha"]  = pd.to_datetime(
+                libro_sin_par["fecha_contable"] if "fecha_contable" in libro_sin_par.columns else None,
+                errors="coerce"
+            )
+            partes.append(libro_sin_par[["_rut", "_glosa", "_mi", "_motivo", "_fecha"]])
+            logger.info(
+                f"Libro sin par: {len(libro_sin_par)} filas → "
+                f"MI = {libro_sin_par['_mi'].sum():,.0f}"
+            )
+
+    if not partes:
         return pd.DataFrame()
 
-    monto_total_error = manuales["monto_cartola"].abs().sum()
+    combinado = pd.concat(partes, ignore_index=True)
+    combinado["_rut"] = combinado["_rut"].fillna("RUT NO IDENTIFICADO")
+    combinado.loc[
+        combinado["_rut"].astype(str).str.strip() == "", "_rut"
+    ] = "RUT NO IDENTIFICADO"
+    combinado["_antiguedad"] = (
+        HOY - combinado["_fecha"]
+    ).dt.days.fillna(0).astype(int)
+
+    diferencia_total = combinado["_mi"].sum()
 
     filas = []
-    for rut, grupo in manuales.groupby("rut_cartola"):
-
-        # Glosa más frecuente del RUT
+    for rut, grupo in combinado.groupby("_rut"):
         glosa_frecuente = (
-            grupo["glosa_cartola"]
-            .dropna()
-            .mode()
-            .iloc[0] if not grupo["glosa_cartola"].dropna().empty else ""
+            grupo["_glosa"].dropna().mode().iloc[0]
+            if not grupo["_glosa"].dropna().empty else ""
         )
-
-        # Motivo predominante
-        if "motivo" in grupo.columns:
-            motivo_counts  = grupo["motivo"].value_counts()
-            motivo_principal = motivo_counts.index[0] if not motivo_counts.empty else "Sin diagnóstico"
-            # Traducir a etiqueta corta para el reporte
-            mapa_motivo = {
-                "Fecha coincide pero monto no encontrado":  "Omisión",
-                "Monto coincide pero fecha fuera de rango": "Corte",
-                "Posible Neto vs Bruto (×1.19)":            "IVA",
-                "Transacción ausente en libro auxiliar":    "Ausente",
-            }
-            motivo_principal = mapa_motivo.get(motivo_principal, motivo_principal)
-        else:
-            motivo_principal = "Sin diagnóstico"
+        motivo_counts    = grupo["_motivo"].value_counts()
+        motivo_raw       = motivo_counts.index[0] if not motivo_counts.empty else "Sin diagnóstico"
+        motivo_principal = mapa_motivo.get(motivo_raw, motivo_raw)
 
         cantidad       = len(grupo)
-        monto_rut      = grupo["monto_cartola"].sum()
-        antiguedad_max = grupo["dias_antiguedad"].max()
-        tramo_max      = grupo.loc[grupo["dias_antiguedad"].idxmax(), "tramo_antiguedad"]
+        mi_rut         = grupo["_mi"].sum()
+        antiguedad_max = grupo["_antiguedad"].max()
         pct_error      = (
-            abs(monto_rut) / monto_total_error * 100
-            if monto_total_error != 0 else 0
+            abs(mi_rut) / abs(diferencia_total) * 100
+            if diferencia_total != 0 else 0
         )
-        alerta = "⚠️ Concentración >20%" if pct_error > UMBRAL_CONCENTRACION * 100 else ""
+        alerta = "⚠️ Riesgo de Concentración Alto" if pct_error > UMBRAL_CONCENTRACION * 100 else ""
 
         filas.append({
-            "rut":               rut,
-            "glosa_frecuente":   glosa_frecuente,
-            "cantidad_partidas": cantidad,
-            "monto_total":       round(monto_rut, 0),
-            "motivo_principal":  motivo_principal,
-            "antiguedad_max":    antiguedad_max,
-            "pct_error":         round(pct_error, 1),
-            "alerta":            alerta,
-            "tramo_max":         tramo_max,
+            "rut":             rut,
+            "glosa_frecuente": glosa_frecuente,
+            "cantidad":        cantidad,
+            "monto_impacto":   round(mi_rut, 0),
+            "motivo":          motivo_principal,
+            "antiguedad_max":  antiguedad_max,
+            "pct_error":       round(pct_error, 1),
+            "plan_accion":     "",
+            "alerta":          alerta,
         })
 
-    df_hallazgos = pd.DataFrame(filas)
-
-    # Ordenar: Críticos primero, luego por antigüedad DESC
-    orden_tramo = {"Crítico": 0, "En Observación": 1, "Vigente": 2}
-    df_hallazgos["_orden_tramo"] = df_hallazgos["tramo_max"].map(orden_tramo).fillna(3)
-    df_hallazgos = (
-        df_hallazgos
-        .sort_values(["_orden_tramo", "antiguedad_max"], ascending=[True, False])
-        .drop(columns=["_orden_tramo"])
+    df_h = pd.DataFrame(filas)
+    df_h["_es_sin_rut"] = (df_h["rut"] == "RUT NO IDENTIFICADO").astype(int)
+    df_h = (
+        df_h.sort_values(["_es_sin_rut", "antiguedad_max"], ascending=[False, False])
+        .drop(columns=["_es_sin_rut"])
         .reset_index(drop=True)
     )
+    return df_h
 
-    return df_hallazgos
+# ─── Escritura de hoja hallazgos ─────────────────────────────────────────────
 
+def _escribir_hoja_hallazgos(ws, df_hallazgos: pd.DataFrame) -> None:
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from reporting.formatter import _borde_fino
 
-# ─── Función interna: escribir hoja Hallazgos_Criticos ───────────────────────
+    FUENTE = "Arial"
+    TAMANO = 10
 
-def _escribir_hallazgos_criticos(ws, df_hallazgos: pd.DataFrame) -> None:
-    """
-    Escribe la hoja Hallazgos_Criticos con ranking por RUT,
-    colores de alerta y formato de números.
-
-    Estructura:
-        Fila 1 → bloque único "Hallazgos Críticos — Ranking por RUT"
-        Fila 2 → encabezados de columna
-        Fila 3+ → datos ordenados Críticos primero
-    """
     ws.sheet_view.showGridLines = False
-
-    # — Fila 1: bloque —
     _escribir_fila_bloques(ws, BLOQUES_HALLAZGOS)
 
-    # — Fila 2: encabezados —
     ws.row_dimensions[2].height = 36
     estilo_enc = estilo_encabezado()
     for col_idx, nombre in enumerate(ENCABEZADOS_HALLAZGOS, start=1):
@@ -297,111 +342,132 @@ def _escribir_hallazgos_criticos(ws, df_hallazgos: pd.DataFrame) -> None:
         celda.border    = estilo_enc["border"]
 
     if df_hallazgos.empty:
-        ws.cell(row=3, column=1, value="Sin partidas manuales — conciliación completa ✅")
+        ws.cell(row=3, column=1, value="Sin hallazgos — conciliación completa ✅")
         return
 
-    # — Fila 3+: datos —
     columnas_df = [
-        "rut", "glosa_frecuente", "cantidad_partidas", "monto_total",
-        "motivo_principal", "antiguedad_max", "pct_error", "alerta",
+        "rut", "glosa_frecuente", "cantidad", "monto_impacto",
+        "motivo", "antiguedad_max", "pct_error", "plan_accion",
     ]
 
+    borde = _borde_fino()
+
     for row_idx, (_, fila) in enumerate(df_hallazgos.iterrows(), start=3):
-        alerta   = fila["alerta"]
-        tramo    = fila["tramo_max"]
-        estilo   = estilo_hallazgo(alerta, tramo)
+        alerta     = fila["alerta"]
+        antiguedad = fila["antiguedad_max"]
+        es_critico = antiguedad > 90
+        es_sin_rut = fila["rut"] == "RUT NO IDENTIFICADO"
+
+        if alerta:
+            fill       = PatternFill(fill_type="solid", start_color="FFC7CE")
+            font_color = "000000"
+        elif es_critico:
+            fill       = PatternFill(fill_type="solid", start_color="FFFFFF")
+            font_color = "9C5600"
+        else:
+            fill       = PatternFill(fill_type="solid", start_color="FFFFFF")
+            font_color = "000000"
 
         for col_idx, col_nombre in enumerate(columnas_df, start=1):
             valor = fila[col_nombre]
             if pd.isna(valor):
                 valor = None
-
             celda           = ws.cell(row=row_idx, column=col_idx, value=valor)
-            celda.font      = estilo["font"]
-            celda.fill      = estilo["fill"]
-            celda.alignment = estilo["alignment"]
-            celda.border    = estilo["border"]
+            celda.font      = Font(name=FUENTE, size=TAMANO, color=font_color, bold=es_sin_rut)
+            celda.fill      = fill
+            celda.alignment = Alignment(vertical="center")
+            celda.border    = borde
 
-            # Formato monto
-            if col_nombre == "monto_total" and valor is not None:
+            if col_nombre == "monto_impacto" and valor is not None:
                 celda.number_format = estilo_numero()["number_format"]
                 celda.alignment     = estilo_numero()["alignment"]
-            # Formato porcentaje
             elif col_nombre == "pct_error" and valor is not None:
                 celda.number_format = '0.0"%"'
                 celda.alignment     = estilo_numero()["alignment"]
-            # Alinear números
-            elif col_nombre in ("cantidad_partidas", "antiguedad_max") and valor is not None:
+            elif col_nombre in ("cantidad", "antiguedad_max") and valor is not None:
                 celda.alignment = estilo_numero()["alignment"]
 
-    # — Anchos —
     for letra, ancho in ANCHOS_HALLAZGOS.items():
         ws.column_dimensions[letra].width = ancho
-
     ws.freeze_panes = "A3"
-
 
 # ─── Funciones públicas ───────────────────────────────────────────────────────
 
 def escribir_resultado(df_resultado: pd.DataFrame, saldo: dict | None = None) -> None:
-    """
-    Escribe el reporte completo de conciliación con tres pestañas:
-        1. Conciliación        → todas las transacciones
-        2. Resumen             → totales y diferencia de saldo
-        3. Hallazgos_Criticos  → ranking por RUT de partidas Manuales
-    """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     _verificar_archivo_disponible(ARCHIVO_RESULTADO)
 
-    wb = Workbook()
-
-    # — Pestaña 1: Conciliación —
-    ws_conc = wb.active
+    wb            = Workbook()
+    ws_conc       = wb.active
     ws_conc.title = "Conciliación"
     _escribir_hoja(
         ws_conc, df_resultado,
         COLUMNAS_RESULTADO, ENCABEZADOS_RESULTADO,
         ANCHOS_RESULTADO, BLOQUES_RESULTADO,
     )
-
-    # — Pestaña 2: Resumen —
     ws_resumen = wb.create_sheet("Resumen")
     _escribir_resumen(ws_resumen, df_resultado, saldo=saldo)
-
-    # — Pestaña 3: Hallazgos_Criticos —
-    ws_hallazgos = wb.create_sheet("Hallazgos_Criticos")
-    df_hallazgos = _construir_hallazgos(df_resultado)
-    _escribir_hallazgos_criticos(ws_hallazgos, df_hallazgos)
 
     wb.save(ARCHIVO_RESULTADO)
     logger.info(f"Resultado guardado → {ARCHIVO_RESULTADO}")
 
 
 def escribir_sin_conciliar(df_resultado: pd.DataFrame) -> None:
-    """Escribe el reporte de partidas sin conciliar."""
     from conciliation.classifier import separar_sin_conciliar
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     _verificar_archivo_disponible(ARCHIVO_SIN_CONCILIAR)
 
-    df_sin = separar_sin_conciliar(df_resultado)
-
-    wb = Workbook()
-    ws = wb.active
+    df_sin   = separar_sin_conciliar(df_resultado)
+    wb       = Workbook()
+    ws       = wb.active
     ws.title = "Sin Conciliar"
-
     _escribir_hoja(
         ws, df_sin,
         COLUMNAS_SIN_CONCILIAR, ENCABEZADOS_SIN_CONCILIAR,
         ANCHOS_SIN_CONCILIAR, BLOQUES_SIN_CONCILIAR,
     )
-
     wb.save(ARCHIVO_SIN_CONCILIAR)
     logger.info(f"Sin conciliar guardado → {ARCHIVO_SIN_CONCILIAR} ({len(df_sin)} partidas)")
 
 
+def escribir_hallazgos(
+    df_resultado: pd.DataFrame,
+    saldo: dict | None = None,
+    df_libro: pd.DataFrame | None = None,
+) -> None:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    _verificar_archivo_disponible(ARCHIVO_HALLAZGOS)
+
+    df_hallazgos = _construir_hallazgos(df_resultado, df_libro)
+
+    if df_hallazgos.empty:
+        logger.info("Sin hallazgos — archivo no generado ✅")
+        return
+
+    if saldo:
+        suma     = df_hallazgos["monto_impacto"].sum()
+        esperado = saldo["diferencia"]
+        delta    = abs(suma - esperado)
+        if delta < 1:
+            logger.info(f"Hallazgos cuadra con diferencia de saldo ✅ ({suma:,.0f})")
+        else:
+            logger.warning(
+                f"Hallazgos NO cuadra ⚠️ "
+                f"(hallazgos={suma:,.0f} | saldo={esperado:,.0f} | delta={delta:,.0f})"
+            )
+
+    wb       = Workbook()
+    ws       = wb.active
+    ws.title = "Hallazgos_Criticos"
+    _escribir_hoja_hallazgos(ws, df_hallazgos)
+
+    wb.save(ARCHIVO_HALLAZGOS)
+    logger.info(f"Hallazgos guardado → {ARCHIVO_HALLAZGOS} ({len(df_hallazgos)} RUTs)")
+
+
 def _escribir_resumen(ws, df: pd.DataFrame, saldo: dict | None) -> None:
-    """Escribe la hoja de resumen ejecutivo."""
+    from reporting.formatter import _borde_fino
     ws.sheet_view.showGridLines = False
 
     total     = len(df)
@@ -432,11 +498,11 @@ def _escribir_resumen(ws, df: pd.DataFrame, saldo: dict | None) -> None:
 
     estilo_enc  = estilo_encabezado()
     estilo_dato = estilo_fila("blanco")
+    borde       = _borde_fino()
 
     for row_idx, (etiqueta, valor) in enumerate(filas, start=1):
         celda_a = ws.cell(row=row_idx, column=1, value=etiqueta)
         celda_b = ws.cell(row=row_idx, column=2, value=valor)
-
         es_titulo = row_idx == 1 or etiqueta in ("Diferencia de Saldo",)
 
         if es_titulo and etiqueta:
@@ -446,6 +512,9 @@ def _escribir_resumen(ws, df: pd.DataFrame, saldo: dict | None) -> None:
         else:
             celda_a.font = estilo_dato["font"]
             celda_b.font = estilo_dato["font"]
+
+        celda_a.border = borde
+        celda_b.border = borde
 
         if isinstance(valor, (int, float)) and etiqueta in (
             "Saldo Cartola", "Saldo Libro", "Diferencia"

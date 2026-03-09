@@ -89,7 +89,7 @@ class TestFechasCoinciden:
 
     def test_diferencia_fuera_de_tolerancia(self):
         a = pd.Timestamp("2024-01-15")
-        b = pd.Timestamp("2024-01-19")
+        b = pd.Timestamp("2024-01-21")  # 6 días → fuera de rango
         assert fechas_coinciden(a, b) is False
 
     def test_fecha_anterior_y_posterior(self):
