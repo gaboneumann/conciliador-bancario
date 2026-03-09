@@ -164,6 +164,14 @@ def estilo_hallazgo(alerta: str, tramo: str) -> dict:
         "border":    _borde_fino(),
     }
 
+def estilo_texto_naranja() -> dict:
+    """Estilo de texto naranja para partidas Críticas en hallazgos."""
+    return {
+        "font": Font(name=FUENTE, size=TAMANO, color="FF6600"),
+        "fill": PatternFill(fill_type="solid", start_color=COLORES["blanco"]),
+        "alignment": Alignment(vertical="center"),
+        "border": _borde_fino(),
+    }
 
 def estilo_numero() -> dict:
     """Estilo adicional para celdas con montos."""

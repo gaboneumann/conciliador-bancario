@@ -24,6 +24,7 @@ ARCHIVO_CARTOLA       = INPUT_DIR  / "cartola_bancaria.xlsx"
 ARCHIVO_LIBRO         = INPUT_DIR  / "libro_auxiliar.xlsx"
 ARCHIVO_RESULTADO     = OUTPUT_DIR / "conciliacion_resultado.xlsx"
 ARCHIVO_SIN_CONCILIAR = OUTPUT_DIR / "partidas_sin_conciliar.xlsx"
+ARCHIVO_HALLAZGOS = OUTPUT_DIR / "hallazgos_criticos_auditoria.xlsx"
 ARCHIVO_LOG           = LOGS_DIR   / "conciliacion.log"
 
 # ─── Mapeo de columnas ────────────────────────────────────────────────────────

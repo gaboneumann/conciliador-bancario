@@ -20,6 +20,8 @@ from ingestion.normalizer import normalizar_cartola, normalizar_libro
 from conciliation.matcher import hacer_matching
 from conciliation.classifier import clasificar, calcular_diferencia_saldo
 from reporting.writer import escribir_resultado, escribir_sin_conciliar
+from reporting.writer import escribir_resultado, escribir_sin_conciliar, escribir_hallazgos
+
 
 logger = get_logger(__name__)
 
@@ -56,6 +58,7 @@ def main():
         logger.info("[6/6] Escribiendo archivos de salida...")
         escribir_resultado(df_resultado, saldo)
         escribir_sin_conciliar(df_resultado)
+        escribir_hallazgos(df_resultado, saldo, libro)
 
         logger.info("=" * 50)
         logger.info("  Proceso completado exitosamente")
