@@ -1,13 +1,10 @@
 """
-writer.py — Escritura de archivos Excel de resultado (v2.3e).
+writer.py — Escritura de archivos Excel de resultado (v2.3f).
 
-CAMBIOS v2.3e:
+CAMBIOS v2.3f:
 ─────────────────────────────────────────────────────────────────────────────
-- _construir_hallazgos() usa idx_libro (columna del classifier) para
-  identificar exactamente qué filas del libro matchearon.
-  Las filas restantes son "Libro sin Par" con MI = monto_libro (con signo).
-- Signo corregido: MI = monto_libro (sin negativo) — los egresos ya son
-  negativos en el libro normalizado.
+- IDs Referencia: columna concatenada con nro_documento (cartola/sugerido)
+  y nro_comprobante (libro sin par), separados por " | ".
 ─────────────────────────────────────────────────────────────────────────────
 """
 import pandas as pd
@@ -44,7 +41,7 @@ BLOQUES_HALLAZGOS = [
         "nombre":     "Hallazgos Críticos — Ranking por RUT",
         "bloque":     "hallazgos",
         "col_inicio": 1,
-        "col_fin":    8,
+        "col_fin":    9,
     },
 ]
 
@@ -54,9 +51,10 @@ ANCHOS_HALLAZGOS = {
     "C": 18,
     "D": 24,
     "E": 22,
-    "F": 22,
+    "F": 45,
     "G": 22,
-    "H": 40,
+    "H": 22,
+    "I": 40,
 }
 
 ENCABEZADOS_HALLAZGOS = [
@@ -65,6 +63,7 @@ ENCABEZADOS_HALLAZGOS = [
     "Cant. Partidas",
     "Monto de Impacto",
     "Motivo Principal",
+    "IDs Referencia",
     "Antigüedad Máxima (días)",
     "% sobre Error",
     "Plan de Acción",
@@ -187,7 +186,7 @@ def _escribir_hoja(ws, df, columnas, encabezados, anchos, bloques) -> None:
         ws.column_dimensions[letra].width = ancho
     ws.freeze_panes = "A3"
 
-# ─── Construir DataFrame de hallazgos (v2.3e) ────────────────────────────────
+# ─── Construir DataFrame de hallazgos (v2.3f) ────────────────────────────────
 
 def _construir_hallazgos(
     df_resultado: pd.DataFrame,
@@ -196,13 +195,12 @@ def _construir_hallazgos(
     """
     Tres familias de MI para cuadrar con diferencia de saldo:
 
-        1. Manual        → MI = monto_cartola
-        2. Sugerido      → MI = monto_cartola - monto_libro (MI != 0)
-        3. Libro sin Par → MI = monto_libro (con signo convencional)
-                           Identificado por índices NO presentes en idx_libro
-                           del df_resultado.
+        1. Manual        → MI = monto_cartola       | ID = nro_documento_cartola
+        2. Sugerido      → MI = monto_c - monto_l   | ID = nro_documento_cartola
+        3. Libro sin Par → MI = -monto_libro        | ID = nro_comprobante
 
     sum(MI) == saldo_cartola - saldo_libro ✅
+    IDs Referencia: concatenados con " | " por RUT para trazabilidad de auditoría.
     """
     mapa_motivo = {
         "Fecha coincide pero monto no encontrado":  "Omisión",
@@ -221,7 +219,8 @@ def _construir_hallazgos(
         manuales["_rut"]    = manuales["rut_cartola"].fillna("RUT NO IDENTIFICADO")
         manuales["_glosa"]  = manuales["glosa_cartola"]
         manuales["_fecha"]  = pd.to_datetime(manuales["fecha_valor_cartola"], errors="coerce")
-        partes.append(manuales[["_rut", "_glosa", "_mi", "_motivo", "_fecha"]])
+        manuales["_id"]     = manuales["nro_documento_cartola"].fillna("S/N").astype(str)
+        partes.append(manuales[["_rut", "_glosa", "_mi", "_motivo", "_fecha", "_id"]])
 
     # — Familia 2: Sugeridos con MI != 0 —
     sugeridos = df_resultado[df_resultado["tipo_match"] == "Sugerido"].copy()
@@ -235,24 +234,22 @@ def _construir_hallazgos(
             sugeridos["_rut"]   = sugeridos["rut_cartola"].fillna("RUT NO IDENTIFICADO")
             sugeridos["_glosa"] = sugeridos["glosa_cartola"]
             sugeridos["_fecha"] = pd.to_datetime(sugeridos["fecha_valor_cartola"], errors="coerce")
-            partes.append(sugeridos[["_rut", "_glosa", "_mi", "_motivo", "_fecha"]])
+            sugeridos["_id"]    = sugeridos["nro_documento_cartola"].fillna("S/N").astype(str)
+            partes.append(sugeridos[["_rut", "_glosa", "_mi", "_motivo", "_fecha", "_id"]])
 
     # — Familia 3: Libro sin Par —
     if df_libro is not None and "idx_libro" in df_resultado.columns:
-        # Índices del libro que sí matchearon (exacto o sugerido)
         indices_matcheados = set(
             df_resultado["idx_libro"]
             .dropna()
             .astype(int)
         )
-        # Filas del libro cuyo índice NO está en los matcheados
         libro_sin_par = df_libro.loc[
             ~df_libro.index.isin(indices_matcheados)
         ].copy()
 
         if not libro_sin_par.empty:
-            # MI = monto_libro con signo convencional (egresos negativos)
-            libro_sin_par["_mi"] = -libro_sin_par["monto"]
+            libro_sin_par["_mi"]     = -libro_sin_par["monto"]
             libro_sin_par["_motivo"] = "Libro sin Par"
             libro_sin_par["_rut"]    = libro_sin_par["rut"].fillna("RUT NO IDENTIFICADO") if "rut" in libro_sin_par.columns else "RUT NO IDENTIFICADO"
             libro_sin_par["_glosa"]  = libro_sin_par["glosa"] if "glosa" in libro_sin_par.columns else ""
@@ -260,7 +257,11 @@ def _construir_hallazgos(
                 libro_sin_par["fecha_contable"] if "fecha_contable" in libro_sin_par.columns else None,
                 errors="coerce"
             )
-            partes.append(libro_sin_par[["_rut", "_glosa", "_mi", "_motivo", "_fecha"]])
+            libro_sin_par["_id"] = (
+                libro_sin_par["nro_comprobante"].fillna("S/N").astype(str)
+                if "nro_comprobante" in libro_sin_par.columns else "S/N"
+            )
+            partes.append(libro_sin_par[["_rut", "_glosa", "_mi", "_motivo", "_fecha", "_id"]])
             logger.info(
                 f"Libro sin par: {len(libro_sin_par)} filas → "
                 f"MI = {libro_sin_par['_mi'].sum():,.0f}"
@@ -298,6 +299,7 @@ def _construir_hallazgos(
             if diferencia_total != 0 else 0
         )
         alerta = "⚠️ Riesgo de Concentración Alto" if pct_error > UMBRAL_CONCENTRACION * 100 else ""
+        ids    = " | ".join(grupo["_id"].dropna().unique().tolist())
 
         filas.append({
             "rut":             rut,
@@ -305,6 +307,7 @@ def _construir_hallazgos(
             "cantidad":        cantidad,
             "monto_impacto":   round(mi_rut, 0),
             "motivo":          motivo_principal,
+            "ids_referencia":  ids,
             "antiguedad_max":  antiguedad_max,
             "pct_error":       round(pct_error, 1),
             "plan_accion":     "",
@@ -347,7 +350,7 @@ def _escribir_hoja_hallazgos(ws, df_hallazgos: pd.DataFrame) -> None:
 
     columnas_df = [
         "rut", "glosa_frecuente", "cantidad", "monto_impacto",
-        "motivo", "antiguedad_max", "pct_error", "plan_accion",
+        "motivo", "ids_referencia", "antiguedad_max", "pct_error", "plan_accion",
     ]
 
     borde = _borde_fino()
@@ -375,7 +378,10 @@ def _escribir_hoja_hallazgos(ws, df_hallazgos: pd.DataFrame) -> None:
             celda           = ws.cell(row=row_idx, column=col_idx, value=valor)
             celda.font      = Font(name=FUENTE, size=TAMANO, color=font_color, bold=es_sin_rut)
             celda.fill      = fill
-            celda.alignment = Alignment(vertical="center")
+            celda.alignment = Alignment(
+                vertical="center",
+                wrap_text=(col_nombre == "ids_referencia"),
+            )
             celda.border    = borde
 
             if col_nombre == "monto_impacto" and valor is not None:
