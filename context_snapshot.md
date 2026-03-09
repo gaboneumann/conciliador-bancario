@@ -1,4 +1,4 @@
-# Context Snapshot — Conciliador Bancario v2.3b
+# Context Snapshot — Conciliador Bancario v2.3f
 **Fecha:** 2026-03-09
 **Stack:** Python 3.12 · pandas 2.x · openpyxl 3.x · pytest · Git (ramas por módulo)
 **Autor:** Gabriel Neumann — github.com/gaboneumann
@@ -20,10 +20,10 @@ conciliador_bancario/
 ├── conciliation/
 │   ├── rules.py
 │   ├── matcher.py            # v2.1 — IVA→Sugerido, materialidad→Sugerido, ±5 días
-│   └── classifier.py         # v2.1 — textos accion_recomendada ≤50 chars
+│   └── classifier.py         # v2.1+ — idx_libro agregado al dict de resultado
 ├── reporting/
 │   ├── formatter.py          # v2.3 — estilo_texto_naranja() agregado
-│   └── writer.py             # v2.3b — archivo independiente hallazgos, Opción B contador
+│   └── writer.py             # v2.3f — 3 familias MI, IDs Referencia, cuadratura total
 ├── data/
 │   ├── input/
 │   │   ├── cartola_bancaria.xlsx
@@ -31,9 +31,9 @@ conciliador_bancario/
 │   └── output/
 │       ├── conciliacion_resultado.xlsx        # 2 pestañas: Conciliación, Resumen
 │       ├── partidas_sin_conciliar.xlsx
-│       └── hallazgos_criticos_auditoria.xlsx  # NUEVO — archivo independiente
-├── tests/                    # TDD — 231+ tests
-└── main.py                   # escribir_hallazgos() agregado al paso 6
+│       └── hallazgos_criticos_auditoria.xlsx  # 9 columnas — ranking por RUT
+├── tests/                    # TDD — 265 tests
+└── main.py                   # escribir_hallazgos(df_resultado, saldo, libro) en paso 6
 
 Excel → reader → normalizer → matcher → classifier → writer → Excel output
 ```
@@ -48,12 +48,12 @@ Excel → reader → normalizer → matcher → classifier → writer → Excel 
 | `utils/rut_utils.py` | v2.0 | 22 | sin cambios |
 | `ingestion/reader.py` | v2.0 | — | sin cambios |
 | `ingestion/normalizer.py` | v2.0 | — | sin cambios |
-| `conciliation/rules.py` | v2.0 | — | sin cambios |
+| `conciliation/rules.py` | v2.1 | — | TOLERANCIA_DIAS=5 (tests actualizados) |
 | `conciliation/matcher.py` | v2.1 | 17 | IVA→Sugerido, materialidad→Sugerido, ±5 días |
-| `conciliation/classifier.py` | v2.1 | — | textos accion_recomendada ≤50 chars |
+| `conciliation/classifier.py` | v2.1+ | — | idx_libro agregado al dict de resultado |
 | `reporting/formatter.py` | v2.3 | — | estilo_texto_naranja() agregado |
-| `reporting/writer.py` | v2.3b | 20/20 | archivo hallazgos independiente, Opción B |
-| `main.py` | v2.3 | — | escribir_hallazgos() en paso 6 |
+| `reporting/writer.py` | v2.3f | 265/265 | 3 familias MI + IDs Referencia + cuadratura ✅ |
+| `main.py` | v2.3 | — | escribir_hallazgos(df_resultado, saldo, libro) |
 
 ---
 
@@ -62,22 +62,12 @@ Excel → reader → normalizer → matcher → classifier → writer → Excel 
 ```
 Rama activa: feat/hallazgos-v2.3
 
-main
-├── feat/reporting (v2.2 — formatter y writer base)   ← commiteado
-└── feat/hallazgos-v2.3                               ← EN PROGRESO (sin commitear aún)
-    ├── config/config.py       → ARCHIVO_HALLAZGOS
-    ├── reporting/formatter.py → estilo_texto_naranja()
-    ├── reporting/writer.py    → escribir_hallazgos(), Opción B, fixes formato
-    └── main.py                → escribir_hallazgos() en paso 6
+Commits en rama:
+  feat(writer): hallazgos_criticos_auditoria.xlsx — cuadratura total TRD v2.3
+  feat(writer): columna IDs Referencia — trazabilidad auditoría TRD v2.3f   ← HEAD
 ```
 
-**Commit pendiente (validar primero con python main.py):**
-```bash
-git add config/config.py reporting/formatter.py reporting/writer.py main.py
-git commit -m "feat(writer): hallazgos_criticos_auditoria.xlsx independiente — Opción B contador"
-```
-
-**Luego merge a main:**
+**Merge a main pendiente:**
 ```bash
 git checkout main
 git merge feat/hallazgos-v2.3
@@ -95,43 +85,54 @@ merge(rama-destino): integrar rama-origen
 
 ---
 
-## Cambios sesión 2026-03-09
+## Cambios acumulados esta sesión (2026-03-09)
 
-### config/config.py
+### conciliation/classifier.py
+Agregado `idx_libro` al dict de resultado en `clasificar()`:
 ```python
-ARCHIVO_HALLAZGOS = OUTPUT_DIR / "hallazgos_criticos_auditoria.xlsx"
+# Con match:
+"idx_libro": idx_l,   # int — índice de la fila del libro que matcheó
+
+# Sin match:
+"idx_libro": None,
+```
+Propósito: permitir al writer identificar exactamente qué filas del libro están sin par,
+usando índices en lugar de comprobantes (que tienen duplicados).
+
+### reporting/writer.py — v2.3f
+**3 familias de MI para cuadratura total:**
+
+| Familia | MI | ID |
+|---|---|---|
+| Manual | `monto_cartola` | `nro_documento_cartola` |
+| Sugerido (diff≠0) | `monto_cartola - monto_libro` | `nro_documento_cartola` |
+| Libro sin Par | `-monto_libro` | `nro_comprobante` |
+
+`sum(MI) == saldo_cartola - saldo_libro` ✅
+
+**Ecuación de cuadratura:**
+```
+MI = Manuales + Sugeridos - Libro_sin_Par
+   = -82,072,126 + (-22,703,242) - (-25,992,233)
+   = -78,783,135 ✅
 ```
 
-### reporting/formatter.py
-Nueva función agregada después de `estilo_hallazgo()`:
-```python
-def estilo_texto_naranja() -> dict:
-    """Estilo de texto naranja para partidas Críticas en hallazgos."""
-    return {
-        "font": Font(name=FUENTE, size=TAMANO, color="FF6600"),
-        "fill": PatternFill(fill_type="solid", start_color=COLORES["blanco"]),
-        "alignment": Alignment(vertical="center"),
-        "border": _borde_fino(),
-    }
-```
+**Nueva columna IDs Referencia (col F):**
+- Concatena todos los IDs del RUT con separador ` | `
+- `wrap_text=True` en la celda para legibilidad
+- Ancho columna F: 45
 
-### reporting/writer.py — 3 fixes (v2.3b)
-1. **Opción B (contador):** `_construir_hallazgos()` incluye dos familias:
-   - `"Omisión Total"` → partidas Manual (monto_cartola completo)
-   - `"Diferencia Parcial"` → partidas Sugerido (solo diff_monto)
-   - Suma de ambas = diferencia de saldo exacta ✅
-   - Nueva columna `"Familia"` en el reporte
-
-2. **Header completo:** `BLOQUES_HALLAZGOS col_fin=10` cubre todas las columnas incluyendo "Plan de Acción"
-
-3. **Bordes en Resumen:** `_escribir_resumen()` aplica `_borde_fino()` a todas las celdas
-
-### main.py
-```python
-from reporting.writer import escribir_resultado, escribir_sin_conciliar, escribir_hallazgos
-# paso 6:
-escribir_hallazgos(df_resultado, saldo)
-```
+### Tests actualizados
+| Test | Cambio |
+|---|---|
+| `test_tolerancia_dias_es_tres` | → `test_tolerancia_dias_es_cinco` (valor 5) |
+| `test_diferencia_fuera_de_tolerancia` | fecha 19→21 (6 días, fuera de ±5) |
+| `test_diferencia_exactamente_en_limite` | fecha 18→20 (límite exacto ±5) |
+| `test_accion_iva` | texto actualizado v2.1 |
+| `test_anchos_resultado_tiene_13_columnas` | → 24 columnas v2 |
+| `test_bloques_resultado_cubren_13_columnas` | → col_fin=24 |
+| `test_cartola_tiene_claves_requeridas` | claves v2 |
+| `test_libro_tiene_claves_requeridas` | claves v2 |
 
 ---
 
@@ -143,23 +144,23 @@ escribir_hallazgos(df_resultado, saldo)
 | `partidas_sin_conciliar.xlsx` | Sin Conciliar | 123 partidas Manual con diagnóstico |
 | `hallazgos_criticos_auditoria.xlsx` | Hallazgos_Criticos | Ranking por RUT — tablero de control |
 
-### Columnas hallazgos_criticos_auditoria.xlsx
-| # | Columna | Descripción |
-|---|---|---|
-| 1 | RUT | Identificador del tercero |
-| 2 | Glosa Frecuente | Glosa más frecuente del RUT |
-| 3 | Cantidad Partidas | Nº de transacciones agrupadas |
-| 4 | Monto Pendiente | Suma monto_cartola (Manual) + diff_monto (Sugerido) |
-| 5 | Familia | "Omisión Total" o "Diferencia Parcial" |
-| 6 | Motivo Principal | Omisión / Corte / IVA / Ausente / Materialidad |
-| 7 | Días de Atraso | Antigüedad máxima del RUT |
-| 8 | % sobre Total Error | Peso relativo del RUT en el descuadre |
-| 9 | Alerta | "⚠️ Riesgo de Concentración Alto" si >20% |
-| 10 | Plan de Acción | Vacío — para el responsable de área |
+### Columnas hallazgos_criticos_auditoria.xlsx (v2.3f — 9 columnas)
+| # | Col | Encabezado | Descripción |
+|---|---|---|---|
+| 1 | A | RUT | Identificador del tercero |
+| 2 | B | Glosa Frecuente | Glosa más frecuente del RUT |
+| 3 | C | Cant. Partidas | Nº de transacciones agrupadas |
+| 4 | D | Monto de Impacto | sum(MI) por RUT |
+| 5 | E | Motivo Principal | Omisión / Corte / IVA / Ausente / Materialidad / Libro sin Par |
+| 6 | F | IDs Referencia | nro_documento o nro_comprobante concatenados con ` \| ` |
+| 7 | G | Antigüedad Máxima (días) | max(hoy - fecha_valor) |
+| 8 | H | % sobre Error | abs(MI_rut) / abs(diferencia_total) × 100 |
+| 9 | I | Plan de Acción | Vacío — editable por responsable de área |
 
 ### Lógica de colores hallazgos
-- **Fondo Rojo** `#FFC7CE` → RUT con alerta concentración >20%
-- **Texto Naranja** `#FF6600` → Partidas Críticas (>90 días) sin alerta de concentración
+- **Fondo Rojo** `#FFC7CE` → % sobre Error > 20%
+- **Texto Naranja** `#9C5600` → Antigüedad > 90 días (sin alerta concentración)
+- **RUT NO IDENTIFICADO** → bold, aparece primero en el ranking
 - **Sin color** → resto
 
 ---
@@ -176,8 +177,11 @@ escribir_hallazgos(df_resultado, saldo)
 - **Prioridad de color en formatter:** azul (`#BDD7EE`) > verde agua (`#E2EFDA`) > color de certeza.
 - **`separar_sin_conciliar()`** filtra por `"Manual"`.
 - **Textos accion_recomendada ≤50 chars (v2.1):** mapa de motivos cortos para evitar desborde en Excel.
-- **Opción B hallazgos (v2.3b):** hallazgos incluye Manuales + Sugeridos para cuadrar con diferencia de saldo. Decisión del contador: "la cuadratura es intransable".
+- **Opción A hallazgos (v2.3):** hallazgos incluye Manuales + Sugeridos + Libro sin Par para cuadrar con diferencia de saldo. Decisión del contador: "la cuadratura es intransable".
 - **Archivo hallazgos independiente (v2.3):** separado de conciliacion_resultado.xlsx para enviar a responsables de área sin exponer cartola completa.
+- **idx_libro en classifier (v2.3):** columna interna que guarda el índice de la fila del libro matcheada. Permite identificar libro sin par por índice (no por comprobante, que tiene duplicados).
+- **IDs Referencia concatenados (v2.3f):** Opción A del contador — mantiene visión estratégica por RUT con trazabilidad suficiente para ir al ERP. Separador ` | ` para parseo futuro.
+- **MI con signo (v2.3f):** Libro sin Par usa `-monto_libro` para contribuir positivamente a la ecuación de cuadratura.
 
 ---
 
@@ -204,17 +208,17 @@ libro  : fecha_contable, glosa, rut, monto, nro_referencia, nro_comprobante, cod
 }
 ```
 
-### Salida de `classifier.py` (DataFrame — 24 columnas)
+### Salida de `classifier.py` (DataFrame — 25 columnas)
 ```
-Cartola (7): fecha_operacion_cartola, fecha_valor_cartola, glosa_cartola,
-             rut_cartola, monto_cartola, nro_documento_cartola, banco_cartola
+Cartola (7):  fecha_operacion_cartola, fecha_valor_cartola, glosa_cartola,
+              rut_cartola, monto_cartola, nro_documento_cartola, banco_cartola
 
-Libro (7):   fecha_contable_libro, glosa_libro, rut_libro, monto_libro,
-             nro_referencia_libro, nro_comprobante_libro, codigo_tx_libro
+Libro (7):    fecha_contable_libro, glosa_libro, rut_libro, monto_libro,
+              nro_referencia_libro, nro_comprobante_libro, codigo_tx_libro
 
-Match (10):  tipo_match, certeza, regla_aplicada, diff_monto, diff_dias,
-             flag_conciliacion, flag_iva, dias_antiguedad, tramo_antiguedad,
-             accion_recomendada
+Match (11):   tipo_match, certeza, regla_aplicada, diff_monto, diff_dias,
+              flag_conciliacion, flag_iva, dias_antiguedad, tramo_antiguedad,
+              accion_recomendada, idx_libro   ← NUEVO v2.3
 
 Diagnóstico (solo Manual): motivo, fecha_cercana, monto_cercano,
                             glosa_cercana, diff_monto_cercano
@@ -222,7 +226,7 @@ Diagnóstico (solo Manual): motivo, fecha_cercana, monto_cercano,
 
 ---
 
-## Resultados con datos sintéticos (última ejecución 2026-03-09)
+## Resultados con datos sintéticos (última ejecución 2026-03-09 19:44)
 
 ```
 Total transacciones : 1.008
@@ -230,31 +234,26 @@ Exacto   :  719  (71.3%)
 Sugerido :  166  (16.5%)
 Manual   :  123  (12.2%)
 
-Flag Partida Conciliación : 35 filas
-Flag IVA (Sugerido)       : 31 filas
-Tramo Vigente             : 623
-Tramo En Observación      : 253
-Tramo Crítico             : 132
-
 Saldo cartola  : -779,660,376
 Saldo libro    : -700,877,241
 Diferencia     :  -78,783,135
+
+Libro sin par  :   99 filas → MI = 25,992,233
+Hallazgos      :  184 RUTs
+Cuadratura     :  ✅ (-78,783,135)
+Tests          :  265 passed, 0 failed
 ```
 
 ---
 
 ## Pendiente próxima sesión
 
-1. **[VALIDAR]** `python main.py` → confirmar `Hallazgos cuadra con diferencia de saldo ✅`
-2. **[VALIDAR]** Revisar Excel hallazgos: header cubre A→J, bordes en Resumen, columna Familia visible
-3. **[TESTS]** Escribir tests para `escribir_hallazgos()` y `_construir_hallazgos()` antes del merge
-4. **[COMMIT]** Si todo OK:
+1. **[MERGE]** Completar integración a main:
    ```bash
-   git add config/config.py reporting/formatter.py reporting/writer.py main.py
-   git commit -m "feat(writer): hallazgos_criticos_auditoria.xlsx independiente — Opción B contador"
    git checkout main
    git merge feat/hallazgos-v2.3
    git commit -m "merge(main): integrar feat/hallazgos-v2.3"
    git push
    ```
-5. **[SIGUIENTE PRD]** Confirmar con contador si hay nuevos requerimientos post v2.3b
+2. **[TESTS]** Escribir tests para `_construir_hallazgos()` — cobertura de las 3 familias de MI y cuadratura.
+3. **[SIGUIENTE PRD]** Confirmar con contador si hay nuevos requerimientos post v2.3f.
