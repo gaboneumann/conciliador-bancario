@@ -53,11 +53,10 @@ def _leer_excel(ruta: Path, columnas_requeridas: dict) -> pd.DataFrame:
     return df
 
 
-def leer_cartola() -> pd.DataFrame:
+def leer_cartola(ruta: Path | None = None) -> pd.DataFrame:
     """Carga la cartola bancaria desde data/input/cartola_bancaria.xlsx"""
-    return _leer_excel(ARCHIVO_CARTOLA, COLUMNAS_CARTOLA)
+    return _leer_excel(ruta or ARCHIVO_CARTOLA, COLUMNAS_CARTOLA)
 
-
-def leer_libro() -> pd.DataFrame:
+def leer_libro(ruta: Path | None = None) -> pd.DataFrame:
     """Carga el libro auxiliar desde data/input/libro_auxiliar.xlsx"""
-    return _leer_excel(ARCHIVO_LIBRO, COLUMNAS_LIBRO)
+    return _leer_excel(ruta or ARCHIVO_LIBRO, COLUMNAS_LIBRO)
