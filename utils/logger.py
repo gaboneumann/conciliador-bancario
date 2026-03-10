@@ -26,23 +26,23 @@ def get_logger(nombre: str) -> logging.Logger:
     """
     logger = logging.getLogger(nombre)
 
-    # Evita agregar handlers duplicados si la función se llama más de una vez
     if logger.handlers:
         return logger
 
     logger.setLevel(logging.DEBUG)
+    logger.propagate = False
 
     formatter = logging.Formatter(FORMATO, datefmt=FORMATO_FECHA)
 
     # — Handler 1: Consola —
     handler_consola = logging.StreamHandler()
-    handler_consola.setLevel(logging.INFO)   # muestra INFO, WARNING, ERROR
+    handler_consola.setLevel(logging.INFO)
     handler_consola.setFormatter(formatter)
 
     # — Handler 2: Archivo —
     ARCHIVO_LOG.parent.mkdir(parents=True, exist_ok=True)
     handler_archivo = logging.FileHandler(ARCHIVO_LOG, encoding="utf-8")
-    handler_archivo.setLevel(logging.DEBUG)  # guarda TODO, incluyendo DEBUG
+    handler_archivo.setLevel(logging.DEBUG)
     handler_archivo.setFormatter(formatter)
 
     logger.addHandler(handler_consola)
