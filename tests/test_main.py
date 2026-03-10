@@ -46,6 +46,7 @@ def df_resultado():
         "referencia_libro":    ["1234567890"],
         "codigo_libro":        ["SRV001"],
         "tipo_match":          ["exacto"],
+        "certeza":             ["Exacto"],   # ← agregado
         "diff_monto":          [0.0],
         "diff_dias":           [0],
         "motivo":              [None],
@@ -85,7 +86,8 @@ class TestFlujoExitoso:
              patch("main.clasificar",                 return_value=df_resultado), \
              patch("main.calcular_diferencia_saldo",  return_value=saldo_mock), \
              patch("main.escribir_resultado"), \
-             patch("main.escribir_sin_conciliar"):
+             patch("main.escribir_sin_conciliar"), \
+             patch("main.escribir_hallazgos"):        # ← agregado
             main()
 
     def test_main_llama_todos_los_pasos(
@@ -104,10 +106,11 @@ class TestFlujoExitoso:
              patch("main.clasificar",                 return_value=df_resultado) as p6, \
              patch("main.calcular_diferencia_saldo",  return_value=saldo_mock) as p7, \
              patch("main.escribir_resultado")         as p8, \
-             patch("main.escribir_sin_conciliar")     as p9:
+             patch("main.escribir_sin_conciliar")     as p9, \
+             patch("main.escribir_hallazgos")         as p10:  # ← agregado
             main()
 
-        for mock in [p1, p2, p3, p4, p5, p6, p7, p8, p9]:
+        for mock in [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10]:
             mock.assert_called_once()
 
     def test_saldo_se_pasa_a_escribir_resultado(
@@ -126,10 +129,10 @@ class TestFlujoExitoso:
              patch("main.clasificar",                 return_value=df_resultado), \
              patch("main.calcular_diferencia_saldo",  return_value=saldo_mock), \
              patch("main.escribir_resultado")         as mock_escribir, \
-             patch("main.escribir_sin_conciliar"):
+             patch("main.escribir_sin_conciliar"), \
+             patch("main.escribir_hallazgos"):        # ← agregado
             main()
 
-        # Verificar que escribir_resultado recibió el saldo
         args, kwargs = mock_escribir.call_args
         saldo_recibido = args[1] if len(args) > 1 else kwargs.get("saldo")
         assert saldo_recibido == saldo_mock
