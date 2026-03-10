@@ -251,27 +251,34 @@ class TestDiagnosticar:
         })
 
     def test_monto_coincide_fecha_no(self, libro_base):
+        from conciliation.matcher import _construir_indice_rut
+        indice = _construir_indice_rut(libro_base)
         motivo, idx, flag_iva = _diagnosticar_sin_match(
             -100_000.0,
             pd.Timestamp("2024-06-01"),
             "19141427-6",
             libro_base,
+            indice,
         )
         assert motivo == MOTIVO_FECHA_FUERA_RANGO
         assert idx == 0
         assert flag_iva == ""
 
     def test_fecha_coincide_monto_no(self, libro_base):
+        from conciliation.matcher import _construir_indice_rut
+        indice = _construir_indice_rut(libro_base)
         motivo, idx, flag_iva = _diagnosticar_sin_match(
             -999_000.0,
             pd.Timestamp("2024-01-15"),
             "19141427-6",
             libro_base,
+            indice,
         )
         assert motivo == MOTIVO_MONTO_NO_ENCONTRADO
         assert idx == 0
 
     def test_nada_coincide(self):
+        from conciliation.matcher import _construir_indice_rut
         libro = pd.DataFrame({
             "fecha_contable":  pd.to_datetime(["2024-06-01"]),
             "glosa":           ["otro"],
@@ -281,22 +288,26 @@ class TestDiagnosticar:
             "nro_comprobante": ["COMP001"],
             "codigo_tx":       ["OTR001"],
         })
+        indice = _construir_indice_rut(libro)
         motivo, idx, flag_iva = _diagnosticar_sin_match(
             -100_000.0,
             pd.Timestamp("2024-01-15"),
             "19141427-6",
             libro,
+            indice,
         )
         assert motivo == MOTIVO_AUSENTE_EN_LIBRO
         assert idx is None
 
     def test_detecta_posible_iva(self, libro_base):
-        """Ratio ×1.19 entre montos → MOTIVO_POSIBLE_IVA y flag activo."""
+        from conciliation.matcher import _construir_indice_rut
+        indice = _construir_indice_rut(libro_base)
         motivo, idx, flag_iva = _diagnosticar_sin_match(
             -119_000.0,
             pd.Timestamp("2024-06-01"),
             "19141427-6",
             libro_base,
+            indice,
         )
         assert motivo == MOTIVO_POSIBLE_IVA
         assert flag_iva == "Posible Neto vs Bruto (×1.19)"
