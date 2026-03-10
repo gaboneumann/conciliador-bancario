@@ -28,20 +28,18 @@ coverage.xml
 *.sublime-project
 *.sublime-workspace
 
-# ─── Datos sensibles (¡nunca subir al repo!) ──────────────
-data/output/
-*.csv
-
-# Permitir datos sintéticos de input
-!data/input/cartola_personal.xlsx
-!data/input/libro_banco.xlsx
-
 # ─── Logs ─────────────────────────────────────────────────
+data/logs/
 logs/
 *.log
 
 # ─── Archivos personales ──────────────────────────────────
-resume_claude.md
+learning_notes.md
+context_snapshot.md
+
+# ─── PyInstaller ──────────────────────────────────────────
+*.spec
+*.manifest
 
 # ─── Sistema operativo ────────────────────────────────────
 .DS_Store
