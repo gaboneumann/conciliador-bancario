@@ -1,15 +1,30 @@
 # 🏦 Conciliador Bancario
 
 > Sistema automatizado de conciliación bancaria desarrollado en Python.  
-> Compara transacciones entre una cartola personal y un libro del banco, detecta diferencias, clasifica resultados y genera reportes Excel con formato profesional.  
->⚠️ Todos los datos incluidos en este repositorio son 100% sintéticos.
+> Compara transacciones entre una cartola bancaria y un libro auxiliar contable, detecta diferencias, clasifica resultados y genera tres reportes Excel con formato profesional y cuadratura matemática validada.  
+> ⚠️ Todos los datos incluidos en este repositorio son 100% sintéticos.
 
 <div align="center">
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Pandas](https://img.shields.io/badge/Pandas-2.x-150458?logo=pandas&logoColor=white)
 ![openpyxl](https://img.shields.io/badge/openpyxl-3.x-217346?logo=microsoftexcel&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-231%20passed-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-265%20passed-brightgreen?logo=pytest&logoColor=white)
+![Conciliación](https://img.shields.io/badge/Conciliaci%C3%B3n%20autom%C3%A1tica-94.2%25-success)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
+
+</div># 🏦 Conciliador Bancario
+
+> Sistema automatizado de conciliación bancaria desarrollado en Python.  
+> Compara transacciones entre una cartola bancaria y un libro auxiliar contable, detecta diferencias, clasifica resultados y genera tres reportes Excel con formato profesional y cuadratura matemática validada.  
+> ⚠️ Todos los datos incluidos en este repositorio son 100% sintéticos.
+
+<div align="center">
+
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Pandas](https://img.shields.io/badge/Pandas-2.x-150458?logo=pandas&logoColor=white)
+![openpyxl](https://img.shields.io/badge/openpyxl-3.x-217346?logo=microsoftexcel&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-265%20passed-brightgreen?logo=pytest&logoColor=white)
 ![Conciliación](https://img.shields.io/badge/Conciliaci%C3%B3n%20autom%C3%A1tica-94.2%25-success)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
@@ -23,6 +38,7 @@
 - [Demostración](#-demostración)
 - [Arquitectura](#-arquitectura)
 - [Algoritmo de matching](#-algoritmo-de-matching)
+- [Reportes generados](#-reportes-generados)
 - [Instalación](#-instalación)
 - [Tests](#-tests)
 - [Configuración](#-configuración)
@@ -33,17 +49,17 @@
 
 ## ❓ ¿Qué problema resuelve?
 
-La conciliación bancaria manual es un proceso repetitivo, propenso a errores y costoso en tiempo. Este sistema automatiza el proceso completo: desde la lectura de archivos Excel hasta la generación de reportes listos para auditoría, con tolerancias configurables y diagnóstico automático de discrepancias.
+La conciliación bancaria manual es un proceso repetitivo, propenso a errores y costoso en tiempo. Este sistema automatiza el proceso completo: desde la lectura de archivos Excel hasta la generación de reportes listos para auditoría, con tolerancias configurables, diagnóstico automático de discrepancias y cuadratura matemática total.
 
-**Resultado en producción: 94.2% de conciliación automática sobre 996 transacciones sintéticas, reduciendo el tiempo de análisis de horas a segundos. Los datos de entrada incluidos en el repositorio (data/input/) fueron generados con un script que crea datos sintéticos — no contienen información bancaria real.
-
-| Métrica                         | Resultado   |
-| :------------------------------ | ----------: |
-| Transacciones procesadas        | 996         |
-| Matches exactos                 | 937         |
-| Matches parciales               | 1           |
-| Sin match                       | 58          |
-| Tasa de conciliación automática | **94.2%**   |
+| Métrica | Resultado |
+| :--- | ---: |
+| Transacciones procesadas | 1.008 |
+| Match Exacto | 719 (71.3%) |
+| Match Sugerido | 166 (16.5%) |
+| Sin Match (Manual) | 123 (12.2%) |
+| Tasa de conciliación automática | **87.8%** |
+| Diferencia de saldo | -$78.783.135 |
+| Cuadratura hallazgos | ✅ exacta |
 
 ---
 
@@ -57,19 +73,17 @@ python main.py
 INFO | [1/6] Leyendo archivos de entrada...
 INFO | [2/6] Normalizando datos...
 INFO | [3/6] Ejecutando matching...
-INFO | Matching completado → exactos: 937 | parciales: 1 | sin match: 58
+INFO | Matching completado → exactos: 719 | sugeridos: 166 | manuales: 123
 INFO | [4/6] Clasificando resultados...
 INFO | [5/6] Calculando diferencia de saldo...
+INFO | Saldo cartola : -779,660,376
+INFO | Saldo libro   : -700,877,241
+INFO | Diferencia    :  -78,783,135
 INFO | [6/6] Escribiendo archivos de salida...
+INFO | Libro sin par: 99 filas → MI = 25,992,233
+INFO | Hallazgos cuadra con diferencia de saldo ✅ (-78,783,135)
 INFO |   Proceso completado exitosamente
 ```
-
-**Outputs generados:**
-
-| Archivo                        | Contenido                                                             |
-| :----------------------------- | :-------------------------------------------------------------------- |
-| `conciliacion_resultado.xlsx`  | Todas las transacciones con su match, diferencias y tipo de resultado |
-| `partidas_sin_conciliar.xlsx`  | Transacciones sin match con diagnóstico del motivo                    |
 
 ---
 
@@ -81,36 +95,32 @@ El proyecto sigue el principio de **separación de responsabilidades**: cada mó
 conciliador_bancario/
 │
 ├── config/
-│   └── config.py                       # Rutas, columnas y tolerancias configurables
+│   └── config.py              # Rutas, columnas y tolerancias configurables
 │
 ├── utils/
-│   ├── logger.py                       # Logging dual: consola + archivo
-│   └── exceptions.py                   # Jerarquía de excepciones propias
+│   ├── logger.py              # Logging dual: consola + archivo
+│   ├── exceptions.py          # Jerarquía de excepciones propias
+│   └── rut_utils.py           # Validación y normalización de RUT chileno
 │
-├── ingestion/__
-│   ├── reader.py                       # Lectura y validación de Excel
-│   └── normalizer.py                   # Limpieza y estandarización de datos
+├── ingestion/
+│   ├── reader.py              # Lectura y validación de Excel
+│   └── normalizer.py          # Limpieza y estandarización de datos
 │
 ├── conciliation/
-│   ├── rules.py                        # Reglas de tolerancia (±2% monto, ±3 días)
-│   ├── matcher.py                      # Algoritmo de matching con diagnóstico
-│   └── classifier.py                   # Ensamblado del resultado final
+│   ├── rules.py               # Reglas de tolerancia (±2% monto, ±5 días)
+│   ├── matcher.py             # Algoritmo de matching v2.1 con certeza
+│   └── classifier.py          # Ensamblado del resultado final + idx_libro
 │
 ├── reporting/
-│   ├── formatter.py                    # Estilos y colores openpyxl
-│   └── writer.py                       # Escritura de Excel con encabezados agrupados
+│   ├── formatter.py           # Estilos y colores openpyxl
+│   └── writer.py              # 3 archivos Excel con cuadratura total
 │
 ├── data/
-│   ├── input/                          # Archivos de entrada 
-│   │   ├── cartola_personal.xlsx       # Datos sintéticos
-│   │   └── libro_banco.xlsx            # Datos sintéticos    
-│   ├── output/                         # Reportes generados          
-│   └── ├── conciliacion_resultado.xlsx
-│       └── partidas_sin_conciliar.xlsx
-│   
+│   ├── input/                 # Datasets sintéticos de entrada
+│   └── output/                # Reportes generados
 │
-├── tests/                              # 231 tests con pytest (TDD)
-├── main.py                             # Orquestador del flujo completo
+├── tests/                     # 265 tests con pytest (TDD)
+├── main.py                    # Orquestador del flujo completo
 └── README.md
 ```
 
@@ -121,20 +131,49 @@ conciliador_bancario/
 Para cada transacción de la cartola busca en el libro en orden de prioridad:
 
 ```
-1. Match exacto  → monto ±2% + fecha ±3 días + referencia (4+ chars)
-2. Match parcial → monto ±2% + fecha ±3 días
-3. Sin match     → diagnóstico automático del motivo
+Jerarquía: RUT → Monto → Fecha → Referencia
+
+1. Exacto   → RUT + monto ±2% + fecha ±5 días + referencia (6+ chars)
+2. Sugerido → RUT + monto ±2% + fecha ±5 días (o diferencia por IVA ×1.19)
+3. Manual   → sin par — diagnóstico automático del motivo
 ```
 
 Cada transacción del libro solo puede usarse una vez, evitando matches duplicados.
 
 **Diagnóstico automático de partidas sin conciliar:**
 
-| Motivo                                   | Significado                                                               |
-| :--------------------------------------- | :------------------------------------------------------------------------ |
-| Monto coincide pero fecha fuera de rango | La transacción existe pero fue registrada con más de 3 días de diferencia |
-| Fecha coincide pero monto no encontrado  | Hay movimiento en esa fecha pero por un monto muy distinto                |
-| Transacción ausente en libro             | No existe ningún registro similar en el libro del banco                   |
+| Motivo | Significado |
+| :--- | :--- |
+| Fecha coincide pero monto no encontrado | Movimiento en esa fecha pero monto muy distinto |
+| Monto coincide pero fecha fuera de rango | Transacción existe pero desfase > 5 días |
+| Posible Neto vs Bruto (×1.19) | Diferencia exacta de IVA — match Sugerido |
+| Transacción ausente en libro auxiliar | No existe ningún registro similar |
+
+---
+
+## 📊 Reportes generados
+
+### 1. `conciliacion_resultado.xlsx`
+Todas las transacciones con su match. Columnas: datos de cartola, datos del libro matcheado, tipo de match, certeza, diferencias, flags y antigüedad.
+
+### 2. `partidas_sin_conciliar.xlsx`
+Las 123 transacciones sin par en el libro, con diagnóstico del motivo y monto más cercano encontrado.
+
+### 3. `hallazgos_criticos_auditoria.xlsx`
+Ranking por RUT con cuadratura matemática total. Incluye tres familias de impacto:
+
+| Familia | MI | ID de trazabilidad |
+| :--- | :--- | :--- |
+| Manual | `monto_cartola` | `nro_documento` |
+| Sugerido | `monto_cartola - monto_libro` | `nro_documento` |
+| Libro sin Par | `-monto_libro` | `nro_comprobante` |
+
+`sum(MI) == saldo_cartola - saldo_libro` ✅
+
+**Lógica de colores:**
+- 🔴 Fondo rojo `#FFC7CE` → RUT concentra más del 20% del error total
+- 🟠 Texto naranja `#9C5600` → Antigüedad mayor a 90 días
+- **Bold** → RUT NO IDENTIFICADO (prioridad máxima)
 
 ---
 
@@ -155,31 +194,21 @@ pip install -r requirements.txt
 
 # 4. (Opcional) Dependencias de desarrollo
 pip install -r requirements-dev.txt
-```
 
-**Colocar los archivos de entrada en:**
-
-```
-data/input/cartola_personal.xlsx
-data/input/libro_banco.xlsx
-```
-
-> ℹ️ Puedes usar los archivos en `data/input/cartola_personal.xlsx` y `data/input/libro_banco.xlsx` para probar el sistema sin datos reales. Fueron generados con un script externo — ejecútalo para crear nuevos conjuntos con distintos volúmenes o parámetros.
-
-**Ejecutar:**
-
-```bash
+# 5. Ejecutar con datos sintéticos incluidos
 python main.py
 ```
+
+Los archivos de entrada `data/input/cartola_bancaria.xlsx` y `data/input/libro_auxiliar.xlsx` son sintéticos y están incluidos en el repositorio — puedes ejecutar el sistema inmediatamente sin configurar nada.
 
 ---
 
 ## 🧪 Tests
 
-El proyecto fue desarrollado con **TDD (Test-Driven Development)**: los tests se escriben antes que el código de producción, garantizando cobertura desde el inicio.
+El proyecto fue desarrollado con **TDD (Test-Driven Development)**. Los tests se escriben antes que el código de producción.
 
 ```bash
-# Correr suite completa
+# Suite completa
 pytest tests/ -v
 
 # Con reporte de cobertura
@@ -187,7 +216,7 @@ pytest tests/ --cov=. --cov-report=term-missing
 ```
 
 ```
-231 passed in X.XXs
+265 passed in 10.44s
 ```
 
 ---
@@ -197,23 +226,255 @@ pytest tests/ --cov=. --cov-report=term-missing
 Todas las tolerancias son configurables en `config/config.py`:
 
 ```python
-TOLERANCIA_MONTO_PCT  = 0.02   # ±2% de diferencia en monto
-TOLERANCIA_DIAS       = 3      # ±3 días de diferencia en fecha
-TOLERANCIA_REFERENCIA = 4      # primeros 4 caracteres de referencia
+TOLERANCIA_MONTO_PCT     = 0.02    # ±2% de diferencia en monto
+TOLERANCIA_MONTO_ABS_MAX = 5_000   # cap absoluto en CLP
+TOLERANCIA_DIAS          = 5       # ±5 días de diferencia en fecha
+TOLERANCIA_REFERENCIA    = 6       # primeros 6 caracteres de referencia
+FACTOR_IVA               = 1.19    # ratio para detección neto vs bruto
 ```
 
 ---
 
 ## 🛠️ Stack técnico
 
-| Tecnología       | Versión | Uso                                      |
-| :--------------- | :-----: | :--------------------------------------- |
-| Python           | 3.12    | Lenguaje principal                       |
-| pandas           | 2.x     | Manipulación y transformación de datos   |
-| openpyxl         | 3.x     | Lectura y escritura de Excel con formato |
-| pytest           | latest  | Suite de 231 tests con TDD               |
-| unicodedata / re | stdlib  | Normalización de texto y referencias     |
-| logging          | stdlib  | Trazabilidad dual consola + archivo      |
+| Tecnología | Versión | Uso |
+| :--- | :---: | :--- |
+| Python | 3.12 | Lenguaje principal |
+| pandas | 2.x | Manipulación y transformación de datos |
+| openpyxl | 3.x | Lectura y escritura de Excel con formato |
+| pytest | latest | Suite de 265 tests con TDD |
+| unicodedata / re | stdlib | Normalización de texto y RUT |
+| logging | stdlib | Trazabilidad dual consola + archivo |
+
+---
+
+## 👤 Autor
+
+**Gabriel Neumann**  
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/gaboneumann/)
+[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?logo=github&logoColor=white)](https://github.com/gaboneumann)
+
+---
+
+## 📄 Licencia
+
+Distribuido bajo licencia MIT. Ver [`LICENSE`](LICENSE) para más información.
+
+---
+
+## 📋 Tabla de contenidos
+
+- [¿Qué problema resuelve?](#-qué-problema-resuelve)
+- [Demostración](#-demostración)
+- [Arquitectura](#-arquitectura)
+- [Algoritmo de matching](#-algoritmo-de-matching)
+- [Reportes generados](#-reportes-generados)
+- [Instalación](#-instalación)
+- [Tests](#-tests)
+- [Configuración](#-configuración)
+- [Stack técnico](#-stack-técnico)
+- [Autor](#-autor)
+
+---
+
+## ❓ ¿Qué problema resuelve?
+
+La conciliación bancaria manual es un proceso repetitivo, propenso a errores y costoso en tiempo. Este sistema automatiza el proceso completo: desde la lectura de archivos Excel hasta la generación de reportes listos para auditoría, con tolerancias configurables, diagnóstico automático de discrepancias y cuadratura matemática total.
+
+| Métrica | Resultado |
+| :--- | ---: |
+| Transacciones procesadas | 1.008 |
+| Match Exacto | 719 (71.3%) |
+| Match Sugerido | 166 (16.5%) |
+| Sin Match (Manual) | 123 (12.2%) |
+| Tasa de conciliación automática | **87.8%** |
+| Diferencia de saldo | -$78.783.135 |
+| Cuadratura hallazgos | ✅ exacta |
+
+---
+
+## 🚀 Demostración
+
+```bash
+python main.py
+```
+
+```
+INFO | [1/6] Leyendo archivos de entrada...
+INFO | [2/6] Normalizando datos...
+INFO | [3/6] Ejecutando matching...
+INFO | Matching completado → exactos: 719 | sugeridos: 166 | manuales: 123
+INFO | [4/6] Clasificando resultados...
+INFO | [5/6] Calculando diferencia de saldo...
+INFO | Saldo cartola : -779,660,376
+INFO | Saldo libro   : -700,877,241
+INFO | Diferencia    :  -78,783,135
+INFO | [6/6] Escribiendo archivos de salida...
+INFO | Libro sin par: 99 filas → MI = 25,992,233
+INFO | Hallazgos cuadra con diferencia de saldo ✅ (-78,783,135)
+INFO |   Proceso completado exitosamente
+```
+
+---
+
+## 🏗️ Arquitectura
+
+El proyecto sigue el principio de **separación de responsabilidades**: cada módulo tiene una única función y puede modificarse sin afectar al resto.
+
+```
+conciliador_bancario/
+│
+├── config/
+│   └── config.py              # Rutas, columnas y tolerancias configurables
+│
+├── utils/
+│   ├── logger.py              # Logging dual: consola + archivo
+│   ├── exceptions.py          # Jerarquía de excepciones propias
+│   └── rut_utils.py           # Validación y normalización de RUT chileno
+│
+├── ingestion/
+│   ├── reader.py              # Lectura y validación de Excel
+│   └── normalizer.py          # Limpieza y estandarización de datos
+│
+├── conciliation/
+│   ├── rules.py               # Reglas de tolerancia (±2% monto, ±5 días)
+│   ├── matcher.py             # Algoritmo de matching v2.1 con certeza
+│   └── classifier.py          # Ensamblado del resultado final + idx_libro
+│
+├── reporting/
+│   ├── formatter.py           # Estilos y colores openpyxl
+│   └── writer.py              # 3 archivos Excel con cuadratura total
+│
+├── data/
+│   ├── input/                 # Datasets sintéticos de entrada
+│   └── output/                # Reportes generados
+│
+├── tests/                     # 265 tests con pytest (TDD)
+├── main.py                    # Orquestador del flujo completo
+└── README.md
+```
+
+---
+
+## 🔍 Algoritmo de matching
+
+Para cada transacción de la cartola busca en el libro en orden de prioridad:
+
+```
+Jerarquía: RUT → Monto → Fecha → Referencia
+
+1. Exacto   → RUT + monto ±2% + fecha ±5 días + referencia (6+ chars)
+2. Sugerido → RUT + monto ±2% + fecha ±5 días (o diferencia por IVA ×1.19)
+3. Manual   → sin par — diagnóstico automático del motivo
+```
+
+Cada transacción del libro solo puede usarse una vez, evitando matches duplicados.
+
+**Diagnóstico automático de partidas sin conciliar:**
+
+| Motivo | Significado |
+| :--- | :--- |
+| Fecha coincide pero monto no encontrado | Movimiento en esa fecha pero monto muy distinto |
+| Monto coincide pero fecha fuera de rango | Transacción existe pero desfase > 5 días |
+| Posible Neto vs Bruto (×1.19) | Diferencia exacta de IVA — match Sugerido |
+| Transacción ausente en libro auxiliar | No existe ningún registro similar |
+
+---
+
+## 📊 Reportes generados
+
+### 1. `conciliacion_resultado.xlsx`
+Todas las transacciones con su match. Columnas: datos de cartola, datos del libro matcheado, tipo de match, certeza, diferencias, flags y antigüedad.
+
+### 2. `partidas_sin_conciliar.xlsx`
+Las 123 transacciones sin par en el libro, con diagnóstico del motivo y monto más cercano encontrado.
+
+### 3. `hallazgos_criticos_auditoria.xlsx`
+Ranking por RUT con cuadratura matemática total. Incluye tres familias de impacto:
+
+| Familia | MI | ID de trazabilidad |
+| :--- | :--- | :--- |
+| Manual | `monto_cartola` | `nro_documento` |
+| Sugerido | `monto_cartola - monto_libro` | `nro_documento` |
+| Libro sin Par | `-monto_libro` | `nro_comprobante` |
+
+`sum(MI) == saldo_cartola - saldo_libro` ✅
+
+**Lógica de colores:**
+- 🔴 Fondo rojo `#FFC7CE` → RUT concentra más del 20% del error total
+- 🟠 Texto naranja `#9C5600` → Antigüedad mayor a 90 días
+- **Bold** → RUT NO IDENTIFICADO (prioridad máxima)
+
+---
+
+## ⚙️ Instalación
+
+```bash
+# 1. Clonar el repositorio
+git clone https://github.com/gaboneumann/conciliador-bancario.git
+cd conciliador-bancario
+
+# 2. Crear entorno virtual
+python -m venv .venv
+source .venv/bin/activate        # macOS / Linux
+.venv\Scripts\activate           # Windows
+
+# 3. Instalar dependencias
+pip install -r requirements.txt
+
+# 4. (Opcional) Dependencias de desarrollo
+pip install -r requirements-dev.txt
+
+# 5. Ejecutar con datos sintéticos incluidos
+python main.py
+```
+
+Los archivos de entrada `data/input/cartola_bancaria.xlsx` y `data/input/libro_auxiliar.xlsx` son sintéticos y están incluidos en el repositorio — puedes ejecutar el sistema inmediatamente sin configurar nada.
+
+---
+
+## 🧪 Tests
+
+El proyecto fue desarrollado con **TDD (Test-Driven Development)**. Los tests se escriben antes que el código de producción.
+
+```bash
+# Suite completa
+pytest tests/ -v
+
+# Con reporte de cobertura
+pytest tests/ --cov=. --cov-report=term-missing
+```
+
+```
+265 passed in 10.44s
+```
+
+---
+
+## 🔧 Configuración
+
+Todas las tolerancias son configurables en `config/config.py`:
+
+```python
+TOLERANCIA_MONTO_PCT     = 0.02    # ±2% de diferencia en monto
+TOLERANCIA_MONTO_ABS_MAX = 5_000   # cap absoluto en CLP
+TOLERANCIA_DIAS          = 5       # ±5 días de diferencia en fecha
+TOLERANCIA_REFERENCIA    = 6       # primeros 6 caracteres de referencia
+FACTOR_IVA               = 1.19    # ratio para detección neto vs bruto
+```
+
+---
+
+## 🛠️ Stack técnico
+
+| Tecnología | Versión | Uso |
+| :--- | :---: | :--- |
+| Python | 3.12 | Lenguaje principal |
+| pandas | 2.x | Manipulación y transformación de datos |
+| openpyxl | 3.x | Lectura y escritura de Excel con formato |
+| pytest | latest | Suite de 265 tests con TDD |
+| unicodedata / re | stdlib | Normalización de texto y RUT |
+| logging | stdlib | Trazabilidad dual consola + archivo |
 
 ---
 
