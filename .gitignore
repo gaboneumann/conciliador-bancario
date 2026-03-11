@@ -36,6 +36,7 @@ logs/
 # ─── Archivos personales ──────────────────────────────────
 learning_notes.md
 context_snapshot.md
+gui_context_snapshot.md
 
 # ─── PyInstaller ──────────────────────────────────────────
 *.spec
