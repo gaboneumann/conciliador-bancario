@@ -85,6 +85,8 @@ class ConciliadorApp(ctk.CTk):
         self.path_cartola = ctk.StringVar()
         self.path_libro   = ctk.StringVar()
         
+        self.path_output  = ctk.StringVar()
+        
         self._queue = queue.Queue()
 
         self._construir_ui()
@@ -194,6 +196,20 @@ class ConciliadorApp(ctk.CTk):
             command=lambda: self._seleccionar_archivo(self.path_libro)
         ).grid(row=3, column=1, padx=(8, 0))
 
+        # Carpeta de destino
+        ctk.CTkLabel(frame, text="Carpeta de destino", font=FONT_SMALL).grid(
+            row=4, column=0, sticky="w", pady=(12, 4)
+        )
+        ctk.CTkEntry(
+            frame, textvariable=self.path_output,
+            font=FONT_SMALL, height=36, width=480
+        ).grid(row=5, column=0, sticky="ew")
+        ctk.CTkButton(
+            frame, text="Examinar", width=100, height=36,
+            font=FONT_SMALL,
+            command=self._seleccionar_carpeta_output
+        ).grid(row=5, column=1, padx=(8, 0))
+        
         frame.columnconfigure(0, weight=1)
 
     def _frame_progreso(self):
@@ -244,12 +260,18 @@ class ConciliadorApp(ctk.CTk):
         if ruta:
             variable.set(ruta)
 
+    def _seleccionar_carpeta_output(self):
+        ruta = filedialog.askdirectory(title="Seleccionar carpeta de destino")
+        if ruta:
+            self.path_output.set(ruta)
+    
     def _ejecutar(self):
         cartola = self.path_cartola.get().strip()
         libro   = self.path_libro.get().strip()
+        output = self.path_output.get().strip()
 
-        if not cartola or not libro:
-            self._mostrar_error("Debes seleccionar ambos archivos antes de ejecutar.")
+        if not cartola or not libro or not output:
+            self._mostrar_error("Debes seleccionar ambos archivos y la carpeta de destino.")
             return
 
         if not Path(cartola).exists():
@@ -263,18 +285,19 @@ class ConciliadorApp(ctk.CTk):
         self._estado_ejecutando()
 
         thread = threading.Thread(
-            target=self._correr_pipeline,
-            args=(cartola, libro),
-            daemon=True
-        )
+                    target=self._correr_pipeline,
+                    args=(cartola, libro, output),
+                    daemon=True
+                )
         thread.start()
           
-    def _correr_pipeline(self, cartola: str, libro: str):
+    def _correr_pipeline(self, cartola: str, libro: str, output: str):
         try:
             metricas = run(
                 path_cartola=Path(cartola),
                 path_libro=Path(libro),
                 paso_callback=self._actualizar_progreso,
+                path_output=Path(output),
             )
             self.after(0, self._estado_exito, metricas)
 
@@ -285,36 +308,36 @@ class ConciliadorApp(ctk.CTk):
             self.after(0, self._mostrar_error, f"Error inesperado:\n{e}")
 
     def _actualizar_progreso(self, paso: int, interno: float):
-            porcentaje = (paso - 1 + interno) / 6
-            texto = PASOS[paso - 1]
-            self._queue.put(("progreso", porcentaje, texto))
+        porcentaje = (paso - 1 + interno) / 6
+        texto = PASOS[paso - 1]
+        self._queue.put(("progreso", porcentaje, texto))
         
     def _procesar_queue(self):
-            ultimo = None
-            try:
-                while True:
-                    ultimo = self._queue.get_nowait()
-            except queue.Empty:
-                pass
-            if ultimo is not None and ultimo[0] == "progreso":
-                _, porcentaje, texto = ultimo
-                self.barra.set(porcentaje)
-                # Solo actualizar label si el texto cambió
-                if texto != self.lbl_paso.cget("text"):
-                    self.lbl_paso.configure(text=texto)
-            self.after(50, self._procesar_queue)
+        ultimo = None
+        try:
+            while True:
+                ultimo = self._queue.get_nowait()
+        except queue.Empty:
+            pass
+        if ultimo is not None and ultimo[0] == "progreso":
+            _, porcentaje, texto = ultimo
+            self.barra.set(porcentaje)
+            # Solo actualizar label si el texto cambió
+            if texto != self.lbl_paso.cget("text"):
+                self.lbl_paso.configure(text=texto)
+        self.after(50, self._procesar_queue)
         
                
     # ─── Estados de UI ────────────────────────────────────────────────────────
 
     def _estado_ejecutando(self):
-            self.btn_ejecutar.configure(state="disabled", text="Ejecutando...")
-            self.btn_carpeta.pack_forget()
-            self.barra.configure(mode="determinate")
-            self.barra.set(0)
-            self._limpiar_log()
-            self._limpiar_metricas()
-            self.lbl_paso.configure(text="Iniciando...", text_color=COLOR_NEUTRO)
+        self.btn_ejecutar.configure(state="disabled", text="Ejecutando...")
+        self.btn_carpeta.pack_forget()
+        self.barra.configure(mode="determinate")
+        self.barra.set(0)
+        self._limpiar_log()
+        self._limpiar_metricas()
+        self.lbl_paso.configure(text="Iniciando...", text_color=COLOR_NEUTRO)
 
     def _estado_exito(self, metricas: dict):
         self.barra.stop()
@@ -384,8 +407,9 @@ class ConciliadorApp(ctk.CTk):
     # ─── Abrir carpeta ────────────────────────────────────────────────────────
 
     def _abrir_carpeta(self):
-        from config.config import OUTPUT_DIR
-        subprocess.Popen(f'explorer "{OUTPUT_DIR}"')
+        ruta = self.path_output.get().strip()
+        if ruta and Path(ruta).exists():
+            subprocess.Popen(f'explorer "{ruta}"')
 
 
 # ─── Punto de entrada ─────────────────────────────────────────────────────────

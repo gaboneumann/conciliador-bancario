@@ -28,7 +28,7 @@ from reporting.writer import escribir_resultado, escribir_sin_conciliar, escribi
 logger = get_logger(__name__)
 
 
-def run(path_cartola: Path | None = None, path_libro: Path | None = None, paso_callback=None) -> dict:
+def run(path_cartola: Path | None = None, path_libro: Path | None = None, paso_callback=None, path_output: Path | None = None) -> dict:
     """
     Ejecuta el flujo completo de conciliación.
 
@@ -93,9 +93,9 @@ def run(path_cartola: Path | None = None, path_libro: Path | None = None, paso_c
     # — Paso 6: Escritura —
     logger.info("[6/6] Escribiendo archivos de salida...")
     _paso(6, 0.0)
-    escribir_resultado(df_resultado, saldo)
-    escribir_sin_conciliar(df_resultado)
-    escribir_hallazgos(df_resultado, saldo, libro)
+    escribir_resultado(df_resultado, saldo, output_dir=path_output)
+    escribir_sin_conciliar(df_resultado, output_dir=path_output)
+    escribir_hallazgos(df_resultado, saldo, libro, output_dir=path_output)
     _paso(6, 1.0)
     
     # — Métricas para la GUI —

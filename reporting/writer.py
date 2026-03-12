@@ -9,6 +9,7 @@ CAMBIOS v2.3f:
 """
 import pandas as pd
 from datetime import date
+from pathlib import Path
 from openpyxl import Workbook
 
 from config.config import (
@@ -68,6 +69,25 @@ ENCABEZADOS_HALLAZGOS = [
     "% sobre Error",
     "Plan de Acción",
 ]
+
+# ─── Resolver rutas de output ─────────────────────────────────────────────────
+
+def _resolver_rutas(output_dir: "Path | None" = None) -> tuple:
+    """
+    Retorna (archivo_resultado, archivo_sin_conciliar, archivo_hallazgos, carpeta).
+    Si output_dir es None, usa las rutas de config.py (modo consola).
+    Si output_dir viene con valor, construye las rutas sobre esa carpeta (modo GUI).
+    """
+    if output_dir is None:
+        return ARCHIVO_RESULTADO, ARCHIVO_SIN_CONCILIAR, ARCHIVO_HALLAZGOS, OUTPUT_DIR
+
+    carpeta = Path(output_dir)
+    return (
+        carpeta / ARCHIVO_RESULTADO.name,
+        carpeta / ARCHIVO_SIN_CONCILIAR.name,
+        carpeta / ARCHIVO_HALLAZGOS.name,
+        carpeta,
+    )
 
 # ─── Verificación de archivo disponible ──────────────────────────────────────
 
@@ -399,9 +419,14 @@ def _escribir_hoja_hallazgos(ws, df_hallazgos: pd.DataFrame) -> None:
 
 # ─── Funciones públicas ───────────────────────────────────────────────────────
 
-def escribir_resultado(df_resultado: pd.DataFrame, saldo: dict | None = None) -> None:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    _verificar_archivo_disponible(ARCHIVO_RESULTADO)
+def escribir_resultado(
+    df_resultado: pd.DataFrame,
+    saldo: dict | None = None,
+    output_dir: "Path | None" = None,
+) -> None:
+    archivo_resultado, _, _, carpeta = _resolver_rutas(output_dir)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    _verificar_archivo_disponible(archivo_resultado)
 
     wb            = Workbook()
     ws_conc       = wb.active
@@ -414,15 +439,19 @@ def escribir_resultado(df_resultado: pd.DataFrame, saldo: dict | None = None) ->
     ws_resumen = wb.create_sheet("Resumen")
     _escribir_resumen(ws_resumen, df_resultado, saldo=saldo)
 
-    wb.save(ARCHIVO_RESULTADO)
-    logger.info(f"Resultado guardado → {ARCHIVO_RESULTADO}")
+    wb.save(archivo_resultado)
+    logger.info(f"Resultado guardado → {archivo_resultado}")
 
 
-def escribir_sin_conciliar(df_resultado: pd.DataFrame) -> None:
+def escribir_sin_conciliar(
+    df_resultado: pd.DataFrame,
+    output_dir: "Path | None" = None,
+) -> None:
     from conciliation.classifier import separar_sin_conciliar
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    _verificar_archivo_disponible(ARCHIVO_SIN_CONCILIAR)
+    _, archivo_sin_conciliar, _, carpeta = _resolver_rutas(output_dir)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    _verificar_archivo_disponible(archivo_sin_conciliar)
 
     df_sin   = separar_sin_conciliar(df_resultado)
     wb       = Workbook()
@@ -433,17 +462,21 @@ def escribir_sin_conciliar(df_resultado: pd.DataFrame) -> None:
         COLUMNAS_SIN_CONCILIAR, ENCABEZADOS_SIN_CONCILIAR,
         ANCHOS_SIN_CONCILIAR, BLOQUES_SIN_CONCILIAR,
     )
-    wb.save(ARCHIVO_SIN_CONCILIAR)
-    logger.info(f"Sin conciliar guardado → {ARCHIVO_SIN_CONCILIAR} ({len(df_sin)} partidas)")
+    wb.save(archivo_sin_conciliar)
+    logger.info(
+        f"Sin conciliar guardado → {archivo_sin_conciliar} ({len(df_sin)} partidas)"
+    )
 
 
 def escribir_hallazgos(
     df_resultado: pd.DataFrame,
     saldo: dict | None = None,
     df_libro: pd.DataFrame | None = None,
+    output_dir: "Path | None" = None,
 ) -> None:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    _verificar_archivo_disponible(ARCHIVO_HALLAZGOS)
+    _, _, archivo_hallazgos, carpeta = _resolver_rutas(output_dir)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    _verificar_archivo_disponible(archivo_hallazgos)
 
     df_hallazgos = _construir_hallazgos(df_resultado, df_libro)
 
@@ -468,8 +501,10 @@ def escribir_hallazgos(
     ws.title = "Hallazgos_Criticos"
     _escribir_hoja_hallazgos(ws, df_hallazgos)
 
-    wb.save(ARCHIVO_HALLAZGOS)
-    logger.info(f"Hallazgos guardado → {ARCHIVO_HALLAZGOS} ({len(df_hallazgos)} RUTs)")
+    wb.save(archivo_hallazgos)
+    logger.info(
+        f"Hallazgos guardado → {archivo_hallazgos} ({len(df_hallazgos)} RUTs)"
+    )
 
 
 def _escribir_resumen(ws, df: pd.DataFrame, saldo: dict | None) -> None:
