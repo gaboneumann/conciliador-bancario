@@ -42,8 +42,9 @@ gui_context_snapshot.md
 data/
 
 # ─── PyInstaller ──────────────────────────────────────────
-*.spec
 *.manifest
+dist/
+build/
 
 # ─── Sistema operativo ────────────────────────────────────
 .DS_Store
