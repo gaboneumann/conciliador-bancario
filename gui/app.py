@@ -8,6 +8,7 @@ Estados    : Idle → Ejecutando → Éxito / Error
 Uso:
     python gui/app.py
 """
+import queue
 import threading
 import subprocess
 from pathlib import Path
@@ -83,6 +84,8 @@ class ConciliadorApp(ctk.CTk):
 
         self.path_cartola = ctk.StringVar()
         self.path_libro   = ctk.StringVar()
+        
+        self._queue = queue.Queue()
 
         self._construir_ui()
 
@@ -107,6 +110,8 @@ class ConciliadorApp(ctk.CTk):
             "reporting.writer",
         ]:
             logging.getLogger(nombre).addHandler(self._gui_handler)
+        
+        self.after(50, self._procesar_queue)
 
 
     # ─── Construcción de UI ───────────────────────────────────────────────────
@@ -263,12 +268,13 @@ class ConciliadorApp(ctk.CTk):
             daemon=True
         )
         thread.start()
-
+          
     def _correr_pipeline(self, cartola: str, libro: str):
         try:
             metricas = run(
                 path_cartola=Path(cartola),
                 path_libro=Path(libro),
+                paso_callback=self._actualizar_progreso,
             )
             self.after(0, self._estado_exito, metricas)
 
@@ -277,17 +283,38 @@ class ConciliadorApp(ctk.CTk):
 
         except Exception as e:
             self.after(0, self._mostrar_error, f"Error inesperado:\n{e}")
+
+    def _actualizar_progreso(self, paso: int, interno: float):
+            porcentaje = (paso - 1 + interno) / 6
+            texto = PASOS[paso - 1]
+            self._queue.put(("progreso", porcentaje, texto))
+        
+    def _procesar_queue(self):
+            ultimo = None
+            try:
+                while True:
+                    ultimo = self._queue.get_nowait()
+            except queue.Empty:
+                pass
+            if ultimo is not None and ultimo[0] == "progreso":
+                _, porcentaje, texto = ultimo
+                self.barra.set(porcentaje)
+                # Solo actualizar label si el texto cambió
+                if texto != self.lbl_paso.cget("text"):
+                    self.lbl_paso.configure(text=texto)
+            self.after(50, self._procesar_queue)
+        
+               
     # ─── Estados de UI ────────────────────────────────────────────────────────
 
     def _estado_ejecutando(self):
-        self.btn_ejecutar.configure(state="disabled", text="Ejecutando...")
-        self.btn_carpeta.pack_forget()
-        self.barra.set(0)
-        self.barra.configure(mode="indeterminate")
-        self.barra.start()
-        self._limpiar_log()
-        self._limpiar_metricas()
-        self.lbl_paso.configure(text=PASOS[0], text_color=COLOR_NEUTRO)
+            self.btn_ejecutar.configure(state="disabled", text="Ejecutando...")
+            self.btn_carpeta.pack_forget()
+            self.barra.configure(mode="determinate")
+            self.barra.set(0)
+            self._limpiar_log()
+            self._limpiar_metricas()
+            self.lbl_paso.configure(text="Iniciando...", text_color=COLOR_NEUTRO)
 
     def _estado_exito(self, metricas: dict):
         self.barra.stop()
