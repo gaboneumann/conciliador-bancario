@@ -39,7 +39,7 @@ context_snapshot.md
 gui_context_snapshot.md
 
 # ─── Datos sintéticos ─────────────────────────────────────
-
+data/
 
 # ─── PyInstaller ──────────────────────────────────────────
 *.spec
